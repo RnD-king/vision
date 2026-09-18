@@ -30,13 +30,19 @@ YOLO/TensorRT 추론, ROS2 토픽 구독·발행, 화면 표시는 담당하지 
 보행 출력은 ROS 파라미터 `locomotion_backend`로 선택한다.
 
 ```text
-velocity (기본값): /g1_vision/cmd_vel로 연속속도 발행
-p2p             : /cmd_vel 발행 없이 /g1_vision/action_cmd로 고정 보행 발행
+velocity         : 호환 시험용으로 /jandi_vision/cmd_vel에 연속속도 발행
+p2p (기본값)    : /cmd_vel 발행 없이 /jandi_vision/action_cmd로 고정 보행 발행
 ```
 
 P2P에서도 공 집기·허들 넘기·슛 등 미션 액션과 같은 `action_cmd/status`
 ACK/DONE 계약을 사용한다. 보행 DONE은 다음 보행 블록 선택에만 쓰고 미션
 controller의 동작 완료로 전달하지 않는다.
+
+core의 한 `ControlCommand`에는 최종 P2P action과 양자화 전
+`pre_p2p_motion`이 함께 들어 있다. ROS는 기존 action 메시지만 실행하고,
+MuJoCo 어댑터는 velocity-compatible action에서 PRE-P2P 속도를 RL 보행기에
+줄 수 있다. 어느 쪽도 미션 상태를 직접 바꾸지 않으며 같은 `action_id`의
+ACK/DONE만 MissionController에 반환한다.
 
 ```bash
 ros2 run vision line_perception_node --ros-args \

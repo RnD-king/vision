@@ -1,7 +1,7 @@
 yolo26_runtime:
   ros__parameters:
     pc_engine_path: /home/noh/dataset/runs/yolo26n_0714/weights/best.engine
-    pc_ultralytics_model_path: /home/noh/dataset/runs/yolo26n_goal/weights/best.pt
+    pc_ultralytics_model_path: /home/noh/dataset/runs/yolo26n_goal_nomosaic-4/weights/best.pt
     pc_ppo_policy_checkpoint: /home/noh/my_cv/high_policy/rl/model_4000.pt
     pc_bc_checkpoint: /home/noh/my_cv/high_policy/bc/model_best.pt
 

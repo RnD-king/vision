@@ -1,0 +1,36 @@
+# 선택적으로 --params-file로 적용하는 ROS 어댑터/실행 설정이다.
+# 제어 알고리즘 기준값은 shared_vision_core/config/vision_algorithm.yaml을
+# line_perception_node가 자동으로 읽으므로 이 파일에 중복하지 않는다.
+line_perception_node:
+  ros__parameters:
+    image_topic: "/camera/color/image_raw"
+    depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/color/camera_info"
+    imu_topic: "/camera/imu_tilt"
+    prev_cmd_topic: "/jandi_vision/cmd_vel"
+    cmd_topic: "/jandi_vision/cmd_vel"
+    action_cmd_topic: "/jandi_vision/action_cmd"
+    action_status_topic: "/jandi_vision/action_status"
+    camera_cmd_topic: "/jandi_vision/camera_cmd"
+    camera_status_topic: "/jandi_vision/camera_status"
+
+    fx: 600.0
+    fy: 600.0
+    cx: 320.0
+    cy: 240.0
+    use_imu_rectification: true
+    assume_zero_imu: false
+    imu_abs_limit_deg: 45.0
+    max_depth_age_sec: 0.20
+
+    show_debug_view: true
+    show_yolo_debug_view: false
+    enable_rule_controller: true
+    enable_ball_controller: true
+    enable_hurdle_controller: true
+    enable_goal_controller: true
+    algorithm_mode: "all"
+    simulate_camera_feedback: false
+    simulate_decision: false
+    simulate_action_duration_sec: 0.50
+    enable_command_transport: true
