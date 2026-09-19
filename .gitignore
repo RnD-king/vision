@@ -1,9 +1,9 @@
-# ROS 2 / colcon build artifacts
+# ROS 2 / colcon
 build/
 install/
 log/
 
-# CMake build artifacts
+# CMake
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -13,18 +13,36 @@ compile_commands.json
 *.so
 *.a
 
+# CUDA / compiler temporary files
+*.d
+*.obj
+
 # Python cache
 __pycache__/
 *.py[cod]
 
-# Generated inference engines
+# Generated inference/model artifacts
 *.engine
+*.plan
+*.onnx
+*.wts
+*.pt
 
-# Editor and Codex workspace metadata
+# ROS recordings / camera recordings
+*.bag
+*.db3
+*.mcap
+*.mp4
+*.avi
+
+# Editor / local workspace
 .vscode/
+.idea/
 .codex/
+.DS_Store
 
 # Temporary files
 *.tmp
 *.log
 *.swp
+*.bak
