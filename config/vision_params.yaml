@@ -32,5 +32,12 @@ line_perception_node:
     algorithm_mode: "all"
     simulate_camera_feedback: false
     simulate_decision: false
+    # 알고리즘 단독 시험에서 action executor의 ACK/READY/DONE을 모사한다.
+    # ACK는 다음 camera frame, READY는 6걸음 종료 직전에 반환한다.
     simulate_action_duration_sec: 0.50
+    simulate_walk_six_duration_sec: 3.0
+    simulate_walk_two_duration_sec: 2.0
+    simulate_turn_in_place_duration_sec: 1.0
+    # 6걸음 DONE 전에 READY를 모사하는 선행 시간이다.
+    simulate_ready_lead_sec: 0.25
     enable_command_transport: true

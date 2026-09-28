@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -215,7 +216,13 @@ public:
     declare_parameter<bool>("simulate_camera_feedback", false);
     // 카메라 기반 판단만 시험할 때 Action 실행기의 ACK/DONE을 내부 모사한다.
     declare_parameter<bool>("simulate_decision", false);
+    // 미션/기타 action의 fallback 시간이다. 보행 action은 아래 종류별 시간을
+    // 우선 사용한다.
     declare_parameter<double>("simulate_action_duration_sec", 0.50);
+    declare_parameter<double>("simulate_walk_six_duration_sec", 3.0);
+    declare_parameter<double>("simulate_walk_two_duration_sec", 2.0);
+    declare_parameter<double>("simulate_turn_in_place_duration_sec", 1.0);
+    declare_parameter<double>("simulate_ready_lead_sec", 0.25);
     declare_parameter<bool>("enable_command_transport", true);
     declare_parameter<double>("rl_stop_duration_sec", algorithm_defaults.ball.rl_stop_duration_sec);
     declare_parameter<double>("max_depth_age_sec", 0.20);
@@ -330,6 +337,14 @@ public:
     simulate_decision_ = get_parameter("simulate_decision").as_bool();
     simulate_action_duration_sec_ =
         get_parameter("simulate_action_duration_sec").as_double();
+    simulate_walk_six_duration_sec_ =
+        get_parameter("simulate_walk_six_duration_sec").as_double();
+    simulate_walk_two_duration_sec_ =
+        get_parameter("simulate_walk_two_duration_sec").as_double();
+    simulate_turn_in_place_duration_sec_ =
+        get_parameter("simulate_turn_in_place_duration_sec").as_double();
+    simulate_ready_lead_sec_ =
+        get_parameter("simulate_ready_lead_sec").as_double();
     enable_command_transport_ = get_parameter("enable_command_transport").as_bool();
     max_depth_age_sec_ = get_parameter("max_depth_age_sec").as_double();
     if (algorithm_mode_ != "all" && algorithm_mode_ != "line" && algorithm_mode_ != "ball" &&
@@ -827,33 +842,134 @@ private:
     wz_prev_ = Clamp(static_cast<double>(msg->angular.z), wz_prev_min_, wz_prev_max_);
   }
 
+  struct SimulatedActionState {
+    std::uint64_t id{0};
+    vision_core::MissionAction action{vision_core::MissionAction::kNone};
+    vision_core::ActionCategory category{vision_core::ActionCategory::kNone};
+    double start_sec{0.0};
+    double duration_sec{0.0};
+    bool acknowledged{false};
+    bool ready_sent{false};
+  };
+
+  bool IsSimulatedLongWalk(vision_core::MissionAction action) const {
+    return action == vision_core::MissionAction::kWalkForwardSix ||
+           action == vision_core::MissionAction::kWalkForwardLeftSix ||
+           action == vision_core::MissionAction::kWalkForwardRightSix;
+  }
+
+  void QueueSimulatedActionFeedback(std::uint64_t action_id,
+                                    bool acknowledged, bool ready,
+                                    bool done) {
+    if (action_id == 0) return;
+    for (const auto &pending : simulated_action_feedback_queue_) {
+      if (pending.action_id == action_id &&
+          pending.acknowledged == acknowledged &&
+          pending.ready == ready && pending.done == done) {
+        return;
+      }
+    }
+    simulated_action_feedback_queue_.push_back(
+        {action_id, acknowledged, done, ready});
+  }
+
+  void RememberCompletedSimulatedAction(
+      const SimulatedActionState &completed) {
+    simulated_completed_actions_.push_back(completed);
+    constexpr std::size_t kCompletedHistoryLimit = 64;
+    while (simulated_completed_actions_.size() > kCompletedHistoryLimit) {
+      simulated_completed_actions_.pop_front();
+    }
+  }
+
+  const SimulatedActionState *FindCompletedSimulatedAction(
+      std::uint64_t action_id) const {
+    for (auto it = simulated_completed_actions_.rbegin();
+         it != simulated_completed_actions_.rend(); ++it) {
+      if (it->id == action_id) return &*it;
+    }
+    return nullptr;
+  }
+
   void UpdateSimulatedDecisionFeedback(double now_sec) {
-    if (!simulate_decision_ || simulated_action_id_ == 0) return;
-    action_delivery_feedback_.action_id = simulated_action_id_;
-    action_delivery_feedback_.acknowledged = true;
-    if (now_sec - simulated_action_start_sec_ <
-        std::max(0.0, simulate_action_duration_sec_)) {
-      return;
+    if (!simulate_decision_) return;
+    if (simulated_current_action_.id != 0) {
+      auto &current = simulated_current_action_;
+      const double elapsed = std::max(0.0, now_sec - current.start_sec);
+      const double ready_at = std::max(
+          0.0,
+          current.duration_sec - std::max(0.0, simulate_ready_lead_sec_));
+      if (IsSimulatedLongWalk(current.action) && !current.ready_sent &&
+          elapsed >= ready_at) {
+        current.ready_sent = true;
+        QueueSimulatedActionFeedback(current.id, true, true, false);
+      } else if (elapsed >= current.duration_sec) {
+        const SimulatedActionState completed = current;
+        QueueSimulatedActionFeedback(completed.id, true, false, true);
+        RememberCompletedSimulatedAction(completed);
+        if (completed.category == vision_core::ActionCategory::kMission) {
+          mission_action_active_ = false;
+        }
+        if (simulated_queued_action_.id != 0) {
+          simulated_current_action_ = simulated_queued_action_;
+          simulated_current_action_.start_sec = now_sec;
+          simulated_current_action_.ready_sent = false;
+          simulated_queued_action_ = {};
+        } else {
+          simulated_current_action_ = {};
+        }
+      }
     }
-    action_delivery_feedback_.done = true;
-    if (last_action_category_ == vision_core::ActionCategory::kMission) {
-      mission_action_active_ = false;
+    if (action_delivery_feedback_.action_id == 0 &&
+        !simulated_action_feedback_queue_.empty()) {
+      action_delivery_feedback_ = simulated_action_feedback_queue_.front();
+      simulated_action_feedback_queue_.pop_front();
     }
-    simulated_action_id_ = 0;
+  }
+
+  double SimulatedActionDurationSec(
+      vision_core::MissionAction action) const {
+    switch (action) {
+    case vision_core::MissionAction::kWalkForwardSix:
+    case vision_core::MissionAction::kWalkForwardLeftSix:
+    case vision_core::MissionAction::kWalkForwardRightSix:
+      return std::max(0.0, simulate_walk_six_duration_sec_);
+    case vision_core::MissionAction::kWalkForwardTwo:
+    case vision_core::MissionAction::kWalkForwardLeftTwo:
+    case vision_core::MissionAction::kWalkForwardRightTwo:
+    case vision_core::MissionAction::kWalkBackwardTwo:
+    case vision_core::MissionAction::kWalkLeftTwo:
+    case vision_core::MissionAction::kWalkRightTwo:
+      return std::max(0.0, simulate_walk_two_duration_sec_);
+    case vision_core::MissionAction::kTurnLeftInPlace:
+    case vision_core::MissionAction::kTurnRightInPlace:
+      return std::max(0.0, simulate_turn_in_place_duration_sec_);
+    default:
+      return std::max(0.0, simulate_action_duration_sec_);
+    }
   }
 
   void OnActionStatus(const vision::msg::CommandStatus::SharedPtr msg) {
-    if (msg->command_id == 0 || msg->command_id != last_action_id_) return;
-    action_delivery_feedback_.action_id = msg->command_id;
+    if (msg->command_id == 0 || simulate_decision_) return;
+    vision_core::CommandDeliveryFeedback feedback;
+    feedback.action_id = msg->command_id;
     if (msg->status == vision::msg::CommandStatus::ACK) {
-      action_delivery_feedback_.acknowledged = true;
+      feedback.acknowledged = true;
+    } else if (msg->status == vision::msg::CommandStatus::READY) {
+      // READY는 해당 action이 이미 수락되어 실행 중이라는 뜻도 포함한다.
+      feedback.acknowledged = true;
+      feedback.ready = true;
     } else if (msg->status == vision::msg::CommandStatus::DONE) {
-      action_delivery_feedback_.acknowledged = true;
-      action_delivery_feedback_.done = true;
+      feedback.acknowledged = true;
+      feedback.done = true;
       if (last_action_category_ == vision_core::ActionCategory::kMission) {
         mission_action_active_ = false;
       }
+    } else {
+      return;
     }
+    std::lock_guard<std::mutex> lock(action_feedback_mutex_);
+    action_feedback_queue_.push_back(feedback);
   }
 
   void OnCameraStatus(const vision::msg::CommandStatus::SharedPtr msg) {
@@ -897,9 +1013,38 @@ private:
     action_cmd_pub_->publish(message);
     last_action_id_ = command.action_id;
     last_action_category_ = command.action_category;
-    if (simulate_decision_ && simulated_action_id_ != command.action_id) {
-      simulated_action_id_ = command.action_id;
-      simulated_action_start_sec_ = this->get_clock()->now().seconds();
+    if (simulate_decision_) {
+      if (simulated_current_action_.id == command.action_id) {
+        // 같은 ID 재전송은 동작 시작 시각을 건드리지 않고 ACK만 재응답한다.
+        QueueSimulatedActionFeedback(command.action_id, true, false, false);
+      } else if (simulated_queued_action_.id == command.action_id) {
+        QueueSimulatedActionFeedback(command.action_id, true, false, false);
+      } else if (FindCompletedSimulatedAction(command.action_id) != nullptr) {
+        // DONE 유실 뒤 늦게 온 동일 ID도 절대 다시 실행하지 않는다.
+        QueueSimulatedActionFeedback(command.action_id, true, false, true);
+      } else {
+        SimulatedActionState next;
+        next.id = command.action_id;
+        next.action = command.action;
+        next.category = command.action_category;
+        next.start_sec = this->get_clock()->now().seconds();
+        next.duration_sec = SimulatedActionDurationSec(command.action);
+        next.acknowledged = true;
+        if (simulated_current_action_.id != 0) {
+          if (simulated_current_action_.ready_sent &&
+              simulated_queued_action_.id == 0 &&
+              command.control_phase ==
+                  vision_core::ControlPhase::kWaitingQueuedActionAck) {
+            // 실행 중에는 잠근다. READY 뒤에 발급된 서로 다른 ID 하나만
+            // 예약하고 현재 동작의 DONE 전에는 시작하지 않는다.
+            simulated_queued_action_ = next;
+            QueueSimulatedActionFeedback(next.id, true, false, false);
+          }
+        } else {
+          simulated_current_action_ = next;
+          QueueSimulatedActionFeedback(next.id, true, false, false);
+        }
+      }
     }
     if (command.action_category == vision_core::ActionCategory::kMission) {
       mission_action_active_ = true;
@@ -1217,7 +1362,15 @@ private:
     // 4) ROS/sensor 형식을 core의 raw perception 입력으로만 변환한다.
     const auto t3 = std::chrono::steady_clock::now();
     const double frame_now_sec = this->get_clock()->now().seconds();
-    UpdateSimulatedDecisionFeedback(frame_now_sec);
+    if (simulate_decision_) {
+      UpdateSimulatedDecisionFeedback(frame_now_sec);
+    } else {
+      std::lock_guard<std::mutex> lock(action_feedback_mutex_);
+      if (!action_feedback_queue_.empty()) {
+        action_delivery_feedback_ = action_feedback_queue_.front();
+        action_feedback_queue_.pop_front();
+      }
+    }
     vision_core::PerceptionFrameInput perception_input;
     perception_input.detections =
         BuildPerceptionDetections(dets, aligned_depth);
@@ -1612,11 +1765,20 @@ private:
   bool simulate_camera_feedback_{true};
   bool simulate_decision_{false};
   double simulate_action_duration_sec_{0.50};
+  double simulate_walk_six_duration_sec_{3.0};
+  double simulate_walk_two_duration_sec_{2.0};
+  double simulate_turn_in_place_duration_sec_{1.0};
+  double simulate_ready_lead_sec_{0.25};
   bool enable_command_transport_{true};
   vision_core::CommandDeliveryFeedback action_delivery_feedback_{};
+  std::mutex action_feedback_mutex_;
+  std::deque<vision_core::CommandDeliveryFeedback> action_feedback_queue_;
   std::uint64_t last_action_id_{0};
-  std::uint64_t simulated_action_id_{0};
-  double simulated_action_start_sec_{0.0};
+  SimulatedActionState simulated_current_action_;
+  SimulatedActionState simulated_queued_action_;
+  std::deque<SimulatedActionState> simulated_completed_actions_;
+  std::deque<vision_core::CommandDeliveryFeedback>
+      simulated_action_feedback_queue_;
   vision_core::ActionCategory last_action_category_{
       vision_core::ActionCategory::kNone};
   bool mission_action_active_{false};

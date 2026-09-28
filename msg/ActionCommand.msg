@@ -32,6 +32,6 @@ uint16 TURN_RIGHT_IN_PLACE=25
 uint64 action_id
 uint8 mission
 uint16 action
-# SHOOT 실행 전 목표 몸통 yaw. 좌회전(+), 우회전(-), degree.
-# SHOOT 이외의 action에서는 0이다.
+# SHOOT의 목표 몸통 yaw 또는 좌/우 6걸음 복합 보행의 선행 제자리회전 목표각.
+# 좌회전(+), 우회전(-), degree. 그 외 action에서는 0이다.
 int16 target_yaw_deg
