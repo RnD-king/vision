@@ -36,8 +36,29 @@ line_perception_node:
     # ACK는 다음 camera frame, READY는 6걸음 종료 직전에 반환한다.
     simulate_action_duration_sec: 0.50
     simulate_walk_six_duration_sec: 3.0
+    simulate_walk_four_duration_sec: 2.5
     simulate_walk_two_duration_sec: 2.0
     simulate_turn_in_place_duration_sec: 1.0
-    # 6걸음 DONE 전에 READY를 모사하는 선행 시간이다.
+    simulate_hold_pose_duration_sec: 2.0
+    # 6걸음/곡선 4걸음 DONE 전에 READY를 모사하는 선행 시간이다.
     simulate_ready_lead_sec: 0.25
     enable_command_transport: true
+
+# LINE P2P 실기 gain/기준 단발 시험 전용 노드의 ROS 실행 설정이다.
+# 여섯 알고리즘 기본값은 공통 vision_algorithm.yaml에서 직접 읽는다.
+line_p2p_tuning_node:
+  ros__parameters:
+    image_topic: "/camera/color/image_raw"
+    camera_info_topic: "/camera/color/camera_info"
+    imu_topic: "/camera/imu_tilt"
+    action_cmd_topic: "/jandi_vision/action_cmd"
+    action_status_topic: "/jandi_vision/action_status"
+    fx: 600.0
+    fy: 600.0
+    cx: 320.0
+    cy: 240.0
+    use_imu_rectification: false
+    assume_zero_imu: false
+    imu_abs_limit_deg: 45.0
+    show_debug_view: true
+    line_tuning_observation_sec: 1.5
