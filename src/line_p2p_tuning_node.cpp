@@ -161,12 +161,17 @@ public:
     inference_hz_ = get_parameter("inference_hz").as_double();
     show_debug_view_ = get_parameter("show_debug_view").as_bool();
     observation_sec_ = get_parameter("line_tuning_observation_sec").as_double();
+    hold_sec_ = config.line_p2p.no_action_hold_sec;
 
     if (engine_path.empty()) {
       throw std::runtime_error("engine_path is empty");
     }
     if (!std::isfinite(observation_sec_) || observation_sec_ <= 0.0) {
       throw std::invalid_argument("line_tuning_observation_sec must be > 0");
+    }
+    if (!std::isfinite(hold_sec_) || hold_sec_ < 0.0) {
+      throw std::invalid_argument(
+          "line_p2p.no_action_hold_sec must be finite and >= 0");
     }
 
     config.enable_ball = false;
@@ -269,7 +274,7 @@ public:
   }
 
 private:
-  enum class State { kIdle, kObserving, kDeciding, kWaitingDone };
+  enum class State { kIdle, kObserving, kDeciding, kWaitingDone, kHolding };
   static constexpr const char *kWindowName = "Line P2P Tuning";
 
   static const char *StateName(State state) {
@@ -278,6 +283,7 @@ private:
     case State::kObserving: return "OBSERVING";
     case State::kDeciding: return "DECIDING";
     case State::kWaitingDone: return "WAIT_DONE";
+    case State::kHolding: return "HOLDING";
     }
     return "UNKNOWN";
   }
@@ -285,15 +291,14 @@ private:
   static const char *ActionName(vision_core::MissionAction action) {
     using vision_core::MissionAction;
     switch (action) {
-    case MissionAction::kWalkForwardTwo: return "WALK_FORWARD_TWO";
-    case MissionAction::kWalkForwardSix: return "WALK_FORWARD_SIX";
-    case MissionAction::kWalkForwardLeftSix: return "TURN_LEFT_N_FORWARD_SIX";
-    case MissionAction::kWalkForwardRightSix: return "TURN_RIGHT_N_FORWARD_SIX";
-    case MissionAction::kTurnLeftInPlace: return "TURN_LEFT_IN_PLACE";
-    case MissionAction::kTurnRightInPlace: return "TURN_RIGHT_IN_PLACE";
-    case MissionAction::kWalkForwardLeftFour: return "WALK_FORWARD_LEFT_FOUR";
-    case MissionAction::kWalkForwardRightFour: return "WALK_FORWARD_RIGHT_FOUR";
-    case MissionAction::kHoldPoseTwo: return "HOLD_POSE_TWO";
+    case MissionAction::kStepForwardOne: return "STEP_FORWARD_ONE";
+    case MissionAction::kStepForwardFive: return "STEP_FORWARD_FIVE";
+    case MissionAction::kTurnLeft: return "TURN_LEFT";
+    case MissionAction::kTurnRight: return "TURN_RIGHT";
+    case MissionAction::kStepForwardLeft: return "STEP_FORWARD_LEFT";
+    case MissionAction::kStepForwardRight: return "STEP_FORWARD_RIGHT";
+    case MissionAction::kTurnLeftAndStep: return "TURN_LEFT_AND_STEP";
+    case MissionAction::kTurnRightAndStep: return "TURN_RIGHT_AND_STEP";
     default: return "NONE";
     }
   }
@@ -465,14 +470,25 @@ private:
                     vision_core::PerceptionFrameInput &input) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     input.allow_new_line_locomotion_action = false;
+    if (state_ == State::kHolding) {
+      if (now_sec + 1e-9 >= hold_until_sec_) {
+        state_ = State::kIdle;
+        hold_until_sec_ = 0.0;
+        RCLCPP_INFO(get_logger(), "Pose hold finished; trigger unlocked");
+      }
+      return;
+    }
     if (state_ != State::kObserving ||
         now_sec - start_sec_ < observation_sec_) {
       return;
     }
     const auto guide = accumulator_.FinishAll(trial_id_);
     if (!guide) {
-      state_ = State::kIdle;
-      RCLCPP_WARN(get_logger(), "No valid LineGuide; action cancelled");
+      state_ = State::kHolding;
+      hold_until_sec_ = now_sec + hold_sec_;
+      RCLCPP_WARN(get_logger(),
+                  "No valid LineGuide; holding current pose for %.2f sec",
+                  hold_sec_);
       return;
     }
     last_guide_ = *guide;
@@ -515,7 +531,11 @@ private:
                     ActionName(last_action_), last_motion_.vx,
                     last_motion_.wz);
       } else {
-        state_ = State::kIdle;
+        state_ = State::kHolding;
+        hold_until_sec_ = now_sec + hold_sec_;
+        RCLCPP_INFO(get_logger(),
+                    "No line action selected; holding current pose for %.2f sec",
+                    hold_sec_);
       }
       return;
     }
@@ -695,6 +715,8 @@ private:
   std::uint64_t action_id_{0};
   double start_sec_{0.0};
   double observation_sec_{1.5};
+  double hold_sec_{0.0};
+  double hold_until_sec_{0.0};
   vision_core::LineGuideAccumulator accumulator_;
   vision_core::LineGuide last_guide_{};
   vision_core::MissionAction last_action_{vision_core::MissionAction::kNone};
@@ -702,7 +724,7 @@ private:
 
   int line_class_id_{0};
   double conf_thres_{0.6};
-  bool use_imu_rectification_{true};
+  bool use_imu_rectification_{false};
   bool assume_zero_imu_{false};
   double inference_hz_{15.0};
   bool show_debug_view_{true};

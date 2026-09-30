@@ -222,11 +222,10 @@ public:
     // 미션/기타 action의 fallback 시간이다. 보행 action은 아래 종류별 시간을
     // 우선 사용한다.
     declare_parameter<double>("simulate_action_duration_sec", 0.50);
-    declare_parameter<double>("simulate_walk_six_duration_sec", 3.0);
-    declare_parameter<double>("simulate_walk_four_duration_sec", 2.5);
-    declare_parameter<double>("simulate_walk_two_duration_sec", 2.0);
-    declare_parameter<double>("simulate_turn_in_place_duration_sec", 1.0);
-    declare_parameter<double>("simulate_hold_pose_duration_sec", 2.0);
+    declare_parameter<double>("simulate_step_forward_five_duration_sec", 3.0);
+    declare_parameter<double>("simulate_curve_step_duration_sec", 2.5);
+    declare_parameter<double>("simulate_step_forward_one_duration_sec", 2.0);
+    declare_parameter<double>("simulate_turn_duration_sec", 1.0);
     declare_parameter<double>("simulate_ready_lead_sec", 0.25);
     declare_parameter<bool>("enable_command_transport", true);
     declare_parameter<double>("rl_stop_duration_sec", algorithm_defaults.ball.rl_stop_duration_sec);
@@ -342,16 +341,14 @@ public:
     simulate_decision_ = get_parameter("simulate_decision").as_bool();
     simulate_action_duration_sec_ =
         get_parameter("simulate_action_duration_sec").as_double();
-    simulate_walk_six_duration_sec_ =
-        get_parameter("simulate_walk_six_duration_sec").as_double();
-    simulate_walk_four_duration_sec_ =
-        get_parameter("simulate_walk_four_duration_sec").as_double();
-    simulate_walk_two_duration_sec_ =
-        get_parameter("simulate_walk_two_duration_sec").as_double();
-    simulate_turn_in_place_duration_sec_ =
-        get_parameter("simulate_turn_in_place_duration_sec").as_double();
-    simulate_hold_pose_duration_sec_ =
-        get_parameter("simulate_hold_pose_duration_sec").as_double();
+    simulate_step_forward_five_duration_sec_ =
+        get_parameter("simulate_step_forward_five_duration_sec").as_double();
+    simulate_curve_step_duration_sec_ =
+        get_parameter("simulate_curve_step_duration_sec").as_double();
+    simulate_step_forward_one_duration_sec_ =
+        get_parameter("simulate_step_forward_one_duration_sec").as_double();
+    simulate_turn_duration_sec_ =
+        get_parameter("simulate_turn_duration_sec").as_double();
     simulate_ready_lead_sec_ =
         get_parameter("simulate_ready_lead_sec").as_double();
     enable_command_transport_ = get_parameter("enable_command_transport").as_bool();
@@ -745,34 +742,25 @@ private:
     using vision_core::MissionAction;
     switch (action) {
     case MissionAction::kNone: return "NONE";
+    case MissionAction::kDefaultPosition: return "DEFAULT_POSITION";
+    case MissionAction::kDefaultPoseMode: return "DEFAULT_POSE_MODE";
     case MissionAction::kStepForwardHalf: return "STEP_FORWARD_HALF";
-    case MissionAction::kStepForward: return "STEP_FORWARD";
-    case MissionAction::kStepBackward: return "STEP_BACKWARD";
-    case MissionAction::kStepLeft: return "STEP_LEFT";
-    case MissionAction::kStepRight: return "STEP_RIGHT";
+    case MissionAction::kStepBack: return "STEP_BACK";
+    case MissionAction::kLeftSideStep: return "LEFT_SIDE_STEP";
+    case MissionAction::kRightSideStep: return "RIGHT_SIDE_STEP";
     case MissionAction::kTurnLeft: return "TURN_LEFT";
     case MissionAction::kTurnRight: return "TURN_RIGHT";
-    case MissionAction::kPickupBall: return "PICKUP_BALL";
-    case MissionAction::kStandUp: return "STAND_UP";
-    case MissionAction::kHurdleContactWalk: return "HURDLE_CONTACT_WALK";
-    case MissionAction::kCrossHurdle: return "CROSS_HURDLE";
+    case MissionAction::kWalkMode: return "WALK_MODE";
+    case MissionAction::kStepForwardOne: return "STEP_FORWARD_ONE";
+    case MissionAction::kStepForwardLeft: return "STEP_FORWARD_LEFT";
+    case MissionAction::kStepForwardRight: return "STEP_FORWARD_RIGHT";
+    case MissionAction::kStepForwardFive: return "STEP_FORWARD_FIVE";
+    case MissionAction::kPickBall: return "PICK_BALL";
+    case MissionAction::kRecatch: return "RECATCH";
+    case MissionAction::kHurdle: return "HUDDLE";
     case MissionAction::kShoot: return "SHOOT";
-    case MissionAction::kVerifyPickup: return "VERIFY_PICKUP";
-    case MissionAction::kFineAdjustHold: return "FINE_ADJUST_HOLD";
-    case MissionAction::kWalkForwardTwo: return "WALK_FORWARD_TWO";
-    case MissionAction::kWalkForwardLeftTwo: return "WALK_FORWARD_LEFT_TWO";
-    case MissionAction::kWalkForwardRightTwo: return "WALK_FORWARD_RIGHT_TWO";
-    case MissionAction::kWalkForwardSix: return "WALK_FORWARD_SIX";
-    case MissionAction::kWalkForwardLeftSix: return "WALK_FORWARD_LEFT_SIX";
-    case MissionAction::kWalkForwardRightSix: return "WALK_FORWARD_RIGHT_SIX";
-    case MissionAction::kWalkBackwardTwo: return "WALK_BACKWARD_TWO";
-    case MissionAction::kWalkLeftTwo: return "WALK_LEFT_TWO";
-    case MissionAction::kWalkRightTwo: return "WALK_RIGHT_TWO";
-    case MissionAction::kTurnLeftInPlace: return "TURN_LEFT_IN_PLACE";
-    case MissionAction::kTurnRightInPlace: return "TURN_RIGHT_IN_PLACE";
-    case MissionAction::kWalkForwardLeftFour: return "WALK_FORWARD_LEFT_FOUR";
-    case MissionAction::kWalkForwardRightFour: return "WALK_FORWARD_RIGHT_FOUR";
-    case MissionAction::kHoldPoseTwo: return "HOLD_POSE_TWO";
+    case MissionAction::kTurnLeftAndStep: return "TURN_LEFT_AND_STEP";
+    case MissionAction::kTurnRightAndStep: return "TURN_RIGHT_AND_STEP";
     }
     return "UNKNOWN";
   }
@@ -871,11 +859,11 @@ private:
   };
 
   bool IsSimulatedLongWalk(vision_core::MissionAction action) const {
-    return action == vision_core::MissionAction::kWalkForwardSix ||
-           action == vision_core::MissionAction::kWalkForwardLeftSix ||
-           action == vision_core::MissionAction::kWalkForwardRightSix ||
-           action == vision_core::MissionAction::kWalkForwardLeftFour ||
-           action == vision_core::MissionAction::kWalkForwardRightFour;
+    return action == vision_core::MissionAction::kStepForwardFive ||
+           action == vision_core::MissionAction::kStepForwardLeft ||
+           action == vision_core::MissionAction::kStepForwardRight ||
+           action == vision_core::MissionAction::kTurnLeftAndStep ||
+           action == vision_core::MissionAction::kTurnRightAndStep;
   }
 
   void QueueSimulatedActionFeedback(std::uint64_t action_id,
@@ -950,25 +938,21 @@ private:
   double SimulatedActionDurationSec(
       vision_core::MissionAction action) const {
     switch (action) {
-    case vision_core::MissionAction::kWalkForwardSix:
-    case vision_core::MissionAction::kWalkForwardLeftSix:
-    case vision_core::MissionAction::kWalkForwardRightSix:
-      return std::max(0.0, simulate_walk_six_duration_sec_);
-    case vision_core::MissionAction::kWalkForwardLeftFour:
-    case vision_core::MissionAction::kWalkForwardRightFour:
-      return std::max(0.0, simulate_walk_four_duration_sec_);
-    case vision_core::MissionAction::kWalkForwardTwo:
-    case vision_core::MissionAction::kWalkForwardLeftTwo:
-    case vision_core::MissionAction::kWalkForwardRightTwo:
-    case vision_core::MissionAction::kWalkBackwardTwo:
-    case vision_core::MissionAction::kWalkLeftTwo:
-    case vision_core::MissionAction::kWalkRightTwo:
-      return std::max(0.0, simulate_walk_two_duration_sec_);
-    case vision_core::MissionAction::kTurnLeftInPlace:
-    case vision_core::MissionAction::kTurnRightInPlace:
-      return std::max(0.0, simulate_turn_in_place_duration_sec_);
-    case vision_core::MissionAction::kHoldPoseTwo:
-      return std::max(0.0, simulate_hold_pose_duration_sec_);
+    case vision_core::MissionAction::kStepForwardFive:
+    case vision_core::MissionAction::kTurnLeftAndStep:
+    case vision_core::MissionAction::kTurnRightAndStep:
+      return std::max(0.0, simulate_step_forward_five_duration_sec_);
+    case vision_core::MissionAction::kStepForwardLeft:
+    case vision_core::MissionAction::kStepForwardRight:
+      return std::max(0.0, simulate_curve_step_duration_sec_);
+    case vision_core::MissionAction::kStepForwardOne:
+    case vision_core::MissionAction::kStepBack:
+    case vision_core::MissionAction::kLeftSideStep:
+    case vision_core::MissionAction::kRightSideStep:
+      return std::max(0.0, simulate_step_forward_one_duration_sec_);
+    case vision_core::MissionAction::kTurnLeft:
+    case vision_core::MissionAction::kTurnRight:
+      return std::max(0.0, simulate_turn_duration_sec_);
     default:
       return std::max(0.0, simulate_action_duration_sec_);
     }
@@ -1790,11 +1774,10 @@ private:
   bool simulate_camera_feedback_{true};
   bool simulate_decision_{false};
   double simulate_action_duration_sec_{0.50};
-  double simulate_walk_six_duration_sec_{3.0};
-  double simulate_walk_four_duration_sec_{2.5};
-  double simulate_walk_two_duration_sec_{2.0};
-  double simulate_turn_in_place_duration_sec_{1.0};
-  double simulate_hold_pose_duration_sec_{2.0};
+  double simulate_step_forward_five_duration_sec_{3.0};
+  double simulate_curve_step_duration_sec_{2.5};
+  double simulate_step_forward_one_duration_sec_{2.0};
+  double simulate_turn_duration_sec_{1.0};
   double simulate_ready_lead_sec_{0.25};
   bool enable_command_transport_{true};
   vision_core::CommandDeliveryFeedback action_delivery_feedback_{};
