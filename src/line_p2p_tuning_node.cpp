@@ -138,6 +138,10 @@ public:
                               config.line_p2p.heading_gain);
     declare_parameter<double>("line_p2p_curvature_gain",
                               config.line_p2p.curvature_gain);
+    declare_parameter<double>("p2p_forward_deadband",
+                              config.command.p2p.forward_deadband);
+    declare_parameter<double>("p2p_yaw_deadband",
+                              config.command.p2p.yaw_deadband);
     declare_parameter<double>("p2p_long_forward_vx",
                               config.command.p2p.long_forward_vx);
     declare_parameter<double>("p2p_curve_yaw_threshold",
@@ -209,6 +213,10 @@ public:
         get_parameter("line_p2p_heading_gain").as_double();
     config.line_p2p.curvature_gain =
         get_parameter("line_p2p_curvature_gain").as_double();
+    config.command.p2p.forward_deadband =
+        get_parameter("p2p_forward_deadband").as_double();
+    config.command.p2p.yaw_deadband =
+        get_parameter("p2p_yaw_deadband").as_double();
     config.command.p2p.long_forward_vx =
         get_parameter("p2p_long_forward_vx").as_double();
     config.command.p2p.curve_yaw_threshold =
@@ -417,6 +425,8 @@ private:
       if (name == "line_p2p_offset_gain") target = &next_line.offset_gain;
       else if (name == "line_p2p_heading_gain") target = &next_line.heading_gain;
       else if (name == "line_p2p_curvature_gain") target = &next_line.curvature_gain;
+      else if (name == "p2p_forward_deadband") target = &next_p2p.forward_deadband;
+      else if (name == "p2p_yaw_deadband") target = &next_p2p.yaw_deadband;
       else if (name == "p2p_long_forward_vx") target = &next_p2p.long_forward_vx;
       else if (name == "p2p_curve_yaw_threshold") target = &next_p2p.curve_yaw_threshold;
       else if (name == "p2p_sharp_turn_yaw_threshold") target = &next_p2p.sharp_turn_yaw_threshold;
@@ -440,6 +450,10 @@ private:
         std::isfinite(next_line.offset_gain) && next_line.offset_gain >= 0.0 &&
         std::isfinite(next_line.heading_gain) && next_line.heading_gain >= 0.0 &&
         std::isfinite(next_line.curvature_gain) && next_line.curvature_gain >= 0.0 &&
+        std::isfinite(next_p2p.forward_deadband) &&
+        next_p2p.forward_deadband >= 0.0 &&
+        std::isfinite(next_p2p.yaw_deadband) &&
+        next_p2p.yaw_deadband >= 0.0 &&
         std::isfinite(next_p2p.long_forward_vx) &&
         next_p2p.long_forward_vx >= next_p2p.forward_deadband &&
         std::isfinite(next_p2p.curve_yaw_threshold) &&
@@ -675,6 +689,9 @@ private:
     std::snprintf(text, sizeof(text), "CRITERIA vx=%.3f curve=%.3f sharp=%.3f",
                   criteria.long_forward_vx, criteria.curve_yaw_threshold,
                   criteria.sharp_turn_yaw_threshold);
+    draw(cv::Scalar(255, 255, 255));
+    std::snprintf(text, sizeof(text), "DEADBAND vx=%.3f wz=%.3f",
+                  criteria.forward_deadband, criteria.yaw_deadband);
     draw(cv::Scalar(255, 255, 255));
     cv::imshow(kWindowName, view);
     cv::waitKey(1);
