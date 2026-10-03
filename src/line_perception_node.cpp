@@ -427,6 +427,15 @@ public:
     ball_cmd_cfg.near_x_tol = get_parameter("ball_near_x_tol").as_double();
     ball_cmd_cfg.near_y_tol = get_parameter("ball_near_y_tol").as_double();
     ball_cmd_cfg.near_use_lateral = get_parameter("ball_near_use_lateral").as_bool();
+    if (!std::isfinite(ball_cmd_cfg.far_u_des_norm) ||
+        ball_cmd_cfg.far_u_des_norm < 0.0 ||
+        ball_cmd_cfg.far_u_des_norm > 1.0 ||
+        !std::isfinite(ball_cmd_cfg.near_target_u_norm) ||
+        ball_cmd_cfg.near_target_u_norm < 0.0 ||
+        ball_cmd_cfg.near_target_u_norm > 1.0) {
+      throw std::invalid_argument(
+          "BALL target_u_norm parameters must be finite and in [0, 1]");
+    }
 
     const double fx = get_parameter("fx").as_double();
     const double fy = get_parameter("fy").as_double();

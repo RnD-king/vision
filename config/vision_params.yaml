@@ -44,7 +44,8 @@ line_perception_node:
     enable_command_transport: true
 
 # LINE P2P 실기 gain/기준 단발 시험 전용 노드의 ROS 실행 설정이다.
-# 여섯 알고리즘 기본값은 공통 vision_algorithm.yaml에서 직접 읽는다.
+# offset/heading gain과 steering deadband 기본값은 공통
+# vision_algorithm.yaml에서 직접 읽는다.
 line_p2p_tuning_node:
   ros__parameters:
     image_topic: "/camera/color/image_raw"

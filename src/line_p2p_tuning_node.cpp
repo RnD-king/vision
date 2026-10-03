@@ -1,4 +1,4 @@
-// 실제 로봇 LINE P2P gain/모션 기준 단발 튜닝 전용 노드.
+// 실제 로봇 LINE P2P O/H gain과 steering deadband 단발 튜닝 전용 노드.
 // 운영용 line_perception_node와 실행 상태를 공유하지 않으며, YOLO adapter와
 // vision_core::MissionController를 그대로 사용해 알고리즘 중복을 피한다.
 
@@ -136,18 +136,8 @@ public:
                               config.line_p2p.offset_gain);
     declare_parameter<double>("line_p2p_heading_gain",
                               config.line_p2p.heading_gain);
-    declare_parameter<double>("line_p2p_curvature_gain",
-                              config.line_p2p.curvature_gain);
-    declare_parameter<double>("p2p_forward_deadband",
-                              config.command.p2p.forward_deadband);
-    declare_parameter<double>("p2p_yaw_deadband",
-                              config.command.p2p.yaw_deadband);
-    declare_parameter<double>("p2p_long_forward_vx",
-                              config.command.p2p.long_forward_vx);
-    declare_parameter<double>("p2p_curve_yaw_threshold",
-                              config.command.p2p.curve_yaw_threshold);
-    declare_parameter<double>("p2p_sharp_turn_yaw_threshold",
-                              config.command.p2p.sharp_turn_yaw_threshold);
+    declare_parameter<double>("line_p2p_steering_deadband",
+                              config.line_p2p.steering_deadband);
 
     image_topic_ = get_parameter("image_topic").as_string();
     camera_info_topic_ = get_parameter("camera_info_topic").as_string();
@@ -211,20 +201,18 @@ public:
         get_parameter("line_p2p_offset_gain").as_double();
     config.line_p2p.heading_gain =
         get_parameter("line_p2p_heading_gain").as_double();
-    config.line_p2p.curvature_gain =
-        get_parameter("line_p2p_curvature_gain").as_double();
-    config.command.p2p.forward_deadband =
-        get_parameter("p2p_forward_deadband").as_double();
-    config.command.p2p.yaw_deadband =
-        get_parameter("p2p_yaw_deadband").as_double();
-    config.command.p2p.long_forward_vx =
-        get_parameter("p2p_long_forward_vx").as_double();
-    config.command.p2p.curve_yaw_threshold =
-        get_parameter("p2p_curve_yaw_threshold").as_double();
-    config.command.p2p.sharp_turn_yaw_threshold =
-        get_parameter("p2p_sharp_turn_yaw_threshold").as_double();
+    config.line_p2p.steering_deadband =
+        get_parameter("line_p2p_steering_deadband").as_double();
+    if (!std::isfinite(config.line_p2p.offset_gain) ||
+        config.line_p2p.offset_gain < 0.0 ||
+        !std::isfinite(config.line_p2p.heading_gain) ||
+        config.line_p2p.heading_gain < 0.0 ||
+        !std::isfinite(config.line_p2p.steering_deadband) ||
+        config.line_p2p.steering_deadband < 0.0) {
+      throw std::invalid_argument(
+          "LINE P2P gains and steering deadband must be finite and >= 0");
+    }
     line_p2p_config_ = config.line_p2p;
-    p2p_config_ = config.command.p2p;
 
     controller_ = std::make_unique<vision_core::MissionController>(config);
     yolo_ = std::make_unique<YoloTrtEngine>(engine_path, 640, 640,
@@ -389,7 +377,7 @@ private:
     }
     {
       std::lock_guard<std::mutex> controller_lock(controller_mutex_);
-      if (!controller_->UpdateLineP2pTuning(line_p2p_config_, p2p_config_)) {
+      if (!controller_->UpdateLineP2pTuning(line_p2p_config_)) {
         response->success = false;
         response->message = "previous action is not finished";
         return;
@@ -416,7 +404,6 @@ private:
     result.successful = true;
     std::lock_guard<std::mutex> state_lock(state_mutex_);
     auto next_line = line_p2p_config_;
-    auto next_p2p = p2p_config_;
     double next_observation = observation_sec_;
     bool touched = false;
     for (const auto &parameter : parameters) {
@@ -424,12 +411,7 @@ private:
       const auto &name = parameter.get_name();
       if (name == "line_p2p_offset_gain") target = &next_line.offset_gain;
       else if (name == "line_p2p_heading_gain") target = &next_line.heading_gain;
-      else if (name == "line_p2p_curvature_gain") target = &next_line.curvature_gain;
-      else if (name == "p2p_forward_deadband") target = &next_p2p.forward_deadband;
-      else if (name == "p2p_yaw_deadband") target = &next_p2p.yaw_deadband;
-      else if (name == "p2p_long_forward_vx") target = &next_p2p.long_forward_vx;
-      else if (name == "p2p_curve_yaw_threshold") target = &next_p2p.curve_yaw_threshold;
-      else if (name == "p2p_sharp_turn_yaw_threshold") target = &next_p2p.sharp_turn_yaw_threshold;
+      else if (name == "line_p2p_steering_deadband") target = &next_line.steering_deadband;
       else if (name == "line_tuning_observation_sec") target = &next_observation;
       if (target == nullptr) continue;
       touched = true;
@@ -449,17 +431,8 @@ private:
     const bool valid =
         std::isfinite(next_line.offset_gain) && next_line.offset_gain >= 0.0 &&
         std::isfinite(next_line.heading_gain) && next_line.heading_gain >= 0.0 &&
-        std::isfinite(next_line.curvature_gain) && next_line.curvature_gain >= 0.0 &&
-        std::isfinite(next_p2p.forward_deadband) &&
-        next_p2p.forward_deadband >= 0.0 &&
-        std::isfinite(next_p2p.yaw_deadband) &&
-        next_p2p.yaw_deadband >= 0.0 &&
-        std::isfinite(next_p2p.long_forward_vx) &&
-        next_p2p.long_forward_vx >= next_p2p.forward_deadband &&
-        std::isfinite(next_p2p.curve_yaw_threshold) &&
-        next_p2p.curve_yaw_threshold >= next_p2p.yaw_deadband &&
-        std::isfinite(next_p2p.sharp_turn_yaw_threshold) &&
-        next_p2p.sharp_turn_yaw_threshold >= next_p2p.curve_yaw_threshold &&
+        std::isfinite(next_line.steering_deadband) &&
+        next_line.steering_deadband >= 0.0 &&
         std::isfinite(next_observation) && next_observation > 0.0;
     if (!valid) {
       result.successful = false;
@@ -468,14 +441,13 @@ private:
     }
     {
       std::lock_guard<std::mutex> controller_lock(controller_mutex_);
-      if (!controller_->UpdateLineP2pTuning(next_line, next_p2p)) {
+      if (!controller_->UpdateLineP2pTuning(next_line)) {
         result.successful = false;
         result.reason = "core still has an active action";
         return result;
       }
     }
     line_p2p_config_ = next_line;
-    p2p_config_ = next_p2p;
     observation_sec_ = next_observation;
     return result;
   }
@@ -646,14 +618,12 @@ private:
     State state;
     vision_core::LineGuide guide = result.mission.line_features.guide;
     vision_core::LineP2pConfig gains;
-    vision_core::P2pMotionConfig criteria;
     vision_core::MissionAction action;
     vision_core::MotionCommand motion;
     {
       std::lock_guard<std::mutex> lock(state_mutex_);
       state = state_;
       gains = line_p2p_config_;
-      criteria = p2p_config_;
       action = last_action_;
       motion = state == State::kWaitingDone
                    ? last_motion_
@@ -672,13 +642,18 @@ private:
     };
     std::snprintf(text, sizeof(text), "STATE: %s", StateName(state));
     draw(cv::Scalar(0, 255, 255));
-    std::snprintf(text, sizeof(text), "O=%+.3f H=%+.3f C=%+.3f",
-                  guide.offset, guide.heading_rad, guide.curvature_rad);
+    std::snprintf(text, sizeof(text), "O=%+.3f H=%+.3f C=%+.3f(%s)",
+                  guide.offset, guide.heading_rad, guide.curvature_rad,
+                  guide.curvature_valid ? "valid" : "invalid");
     draw(cv::Scalar(255, 255, 0));
-    std::snprintf(text, sizeof(text), "TERMS=%+.3f %+.3f %+.3f",
-                  gains.offset_gain * guide.offset,
-                  gains.heading_gain * guide.heading_rad,
-                  gains.curvature_gain * guide.curvature_rad);
+    const double offset_term = gains.offset_gain * guide.offset;
+    const double heading_term = gains.heading_gain * guide.heading_rad;
+    const double score = offset_term + heading_term;
+    std::snprintf(text, sizeof(text), "TERMS O=%+.3f H=%+.3f",
+                  offset_term, heading_term);
+    draw(cv::Scalar(255, 255, 0));
+    std::snprintf(text, sizeof(text), "SCORE=%+.3f BAND=+/-%.3f",
+                  score, gains.steering_deadband);
     draw(cv::Scalar(255, 255, 0));
     std::snprintf(text, sizeof(text), "PRE-P2P vx=%+.3f wz=%+.3f",
                   motion.vx, motion.wz);
@@ -686,13 +661,6 @@ private:
     std::snprintf(text, sizeof(text), "ACTION: %u %s",
                   static_cast<unsigned>(action), ActionName(action));
     draw(cv::Scalar(0, 200, 255));
-    std::snprintf(text, sizeof(text), "CRITERIA vx=%.3f curve=%.3f sharp=%.3f",
-                  criteria.long_forward_vx, criteria.curve_yaw_threshold,
-                  criteria.sharp_turn_yaw_threshold);
-    draw(cv::Scalar(255, 255, 255));
-    std::snprintf(text, sizeof(text), "DEADBAND vx=%.3f wz=%.3f",
-                  criteria.forward_deadband, criteria.yaw_deadband);
-    draw(cv::Scalar(255, 255, 255));
     cv::imshow(kWindowName, view);
     cv::waitKey(1);
   }
@@ -701,7 +669,6 @@ private:
   std::unique_ptr<vision_core::MissionController> controller_;
   std::mutex controller_mutex_;
   vision_core::LineP2pConfig line_p2p_config_{};
-  vision_core::P2pMotionConfig p2p_config_{};
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr
