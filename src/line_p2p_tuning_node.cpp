@@ -164,15 +164,7 @@ public:
         get_parameter("line_p2p_heading_gain").as_double();
     config.line_p2p.steering_deadband =
         get_parameter("line_p2p_steering_deadband").as_double();
-    if (!std::isfinite(config.line_p2p.offset_gain) ||
-        config.line_p2p.offset_gain < 0.0 ||
-        !std::isfinite(config.line_p2p.heading_gain) ||
-        config.line_p2p.heading_gain < 0.0 ||
-        !std::isfinite(config.line_p2p.steering_deadband) ||
-        config.line_p2p.steering_deadband < 0.0) {
-      throw std::invalid_argument(
-          "LINE P2P gains and steering deadband must be finite and >= 0");
-    }
+    vision_core::ValidateAlgorithmConfig(config);
     line_p2p_config_ = config.line_p2p;
 
     controller_ = std::make_unique<vision_core::MissionController>(config);
@@ -389,22 +381,22 @@ private:
       result.reason = "parameters are locked until action DONE";
       return result;
     }
-    const bool valid =
-        std::isfinite(next_line.offset_gain) && next_line.offset_gain >= 0.0 &&
-        std::isfinite(next_line.heading_gain) && next_line.heading_gain >= 0.0 &&
-        std::isfinite(next_line.steering_deadband) &&
-        next_line.steering_deadband >= 0.0 &&
-        std::isfinite(next_observation) && next_observation > 0.0;
-    if (!valid) {
+    if (!std::isfinite(next_observation) || next_observation <= 0.0) {
       result.successful = false;
-      result.reason = "invalid gain/threshold ordering or value";
+      result.reason = "line_tuning_observation_sec must be finite and > 0";
       return result;
     }
     {
       std::lock_guard<std::mutex> controller_lock(controller_mutex_);
-      if (!controller_->UpdateLineP2pTuning(next_line)) {
+      try {
+        if (!controller_->UpdateLineP2pTuning(next_line)) {
+          result.successful = false;
+          result.reason = "core still has an active action";
+          return result;
+        }
+      } catch (const std::runtime_error &error) {
         result.successful = false;
-        result.reason = "core still has an active action";
+        result.reason = error.what();
         return result;
       }
     }

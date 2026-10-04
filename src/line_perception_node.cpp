@@ -21,7 +21,7 @@
 //    미션 잠금·내부 단계·최종 ControlCommand를 계산한다.
 
 // 7. line_perception_node.cpp
-//    core가 반환한 최종 속도/액션/카메라 명령을 ROS 토픽으로 전달한다.
+//    core가 반환한 최종 액션/카메라 명령을 ROS 토픽으로 전달한다.
 
 // 터미널1: ros2 run my_cv val_image_publisher
 // 터미널2: ros2 run vision line_perception_node
@@ -162,16 +162,16 @@ public:
     declare_parameter<bool>("show_yolo_debug_view", false);
     declare_parameter<double>("inference_hz", 15.0);
     declare_parameter<int>("max_centers", algorithm_defaults.line_features.max_centers);
-    // 실제 카메라 request/feedback ROS I/O는 아직 없으므로 안전하게 기본 OFF.
-    // true이면 코어의 시간 추정 compatibility 경로로만 임시 시퀀스를 확인한다.
+    // 각 object mission controller의 사용 여부다.
     declare_parameter<bool>("enable_ball_controller", algorithm_defaults.enable_ball);
     declare_parameter<bool>("enable_hurdle_controller", algorithm_defaults.enable_hurdle);
     declare_parameter<bool>("enable_goal_controller", algorithm_defaults.enable_goal);
     // all은 위 enable_* 값을 따르고, 나머지는 지정한 알고리즘 하나만 실행한다.
     declare_parameter<std::string>("algorithm_mode", "all");
-    // 실제 카메라 모터 ROS I/O 연결 전 단독 알고리즘 시험용 endpoint 피드백이다.
+    // 실제 카메라 대신 endpoint 도달 feedback을 모사하는 시험 옵션이다.
     declare_parameter<bool>("simulate_camera_feedback", false);
-    // 카메라 기반 판단만 시험할 때 Action 실행기의 ACK/DONE을 내부 모사한다.
+    // 실제 executor 없이 ACK/READY/DONE lifecycle을 시험하는 명시적
+    // simulation/test mode다.
     declare_parameter<bool>("simulate_decision", false);
     // 미션/기타 action의 fallback 시간이다. 보행 action은 아래 종류별 시간을
     // 우선 사용한다.
@@ -257,7 +257,6 @@ public:
       throw std::runtime_error("YOLO TensorRT engine 경로(engine_path)가 비어 있습니다.");
     }
 
-    yolo_ = std::make_unique<YoloTrtEngine>(engine_path_, 640, 640, conf_thres_);
     vision_core::HurdleConfig hurdle_cmd_cfg = algorithm_defaults.hurdle;
     hurdle_cmd_cfg.camera_motion_timeout_sec =
         get_parameter("camera_motion_timeout_sec").as_double();
@@ -309,6 +308,11 @@ public:
     // Goal 단독 실행만 공 집기 과정을 생략한다. 통합 모드는 반드시 Ball
     // 성공 결과를 통해서만 has_ball이 켜진다.
     mission_config.initial_has_ball = algorithm_mode_ == "goal";
+    // ROS override가 shared YAML validation을 우회하지 못하게 하고, 무거운
+    // TensorRT engine을 만들기 전에 fail-fast한다.
+    vision_core::ValidateAlgorithmConfig(mission_config);
+    yolo_ = std::make_unique<YoloTrtEngine>(engine_path_, 640, 640,
+                                            conf_thres_);
     mission_controller_ =
         std::make_unique<vision_core::MissionController>(mission_config);
 
@@ -1006,7 +1010,6 @@ private:
     if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0)
       return;
     camera_intrinsics_ = {msg->k[0], msg->k[4], msg->k[2], msg->k[5]};
-    camera_info_ready_ = true;
   }
 
   void ProcessLatestImage() {
@@ -1451,7 +1454,6 @@ private:
   std::mutex image_mutex_;
   sensor_msgs::msg::Image::SharedPtr latest_image_;
   sensor_msgs::msg::Image::SharedPtr latest_depth_;
-  bool camera_info_ready_{false};
   bool enable_ball_controller_{false};
   bool enable_hurdle_controller_{false};
   bool enable_goal_controller_{false};

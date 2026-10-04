@@ -92,7 +92,6 @@ endif()
 
 add_library(vision_core
   src/yolo_trt_engine.cpp
-  src/line_detection_adapter.cpp
   src/yolo_preprocess.cu
 )
 
