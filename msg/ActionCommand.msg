@@ -22,6 +22,9 @@ uint16 HUDDLE=16
 uint16 SHOOT=17
 uint16 TURN_LEFT_AND_STEP=18
 uint16 TURN_RIGHT_AND_STEP=19
+# Reserved protocol ID. HURDLE emits STEP_FORWARD_ONE(10) until the executor
+# mapping for CONTACT_WALK is implemented.
+uint16 CONTACT_WALK=20
 
 uint64 action_id
 uint8 mission

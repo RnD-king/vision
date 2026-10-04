@@ -46,7 +46,6 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
-#include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -133,8 +132,6 @@ public:
     declare_parameter<std::string>("depth_topic", "/camera/aligned_depth_to_color/image_raw");
     declare_parameter<std::string>("camera_info_topic", "/camera/color/camera_info");
     declare_parameter<std::string>("imu_topic", "/camera/imu_tilt");          // IMU roll/pitch 토픽
-    declare_parameter<std::string>("prev_cmd_topic", "/jandi_vision/cmd_vel");   // 이전 속도 참조 토픽
-    declare_parameter<std::string>("cmd_topic", "/jandi_vision/cmd_vel");        // 최종 속도 publish 토픽
     declare_parameter<std::string>("action_cmd_topic", "/jandi_vision/action_cmd");
     declare_parameter<std::string>("action_status_topic", "/jandi_vision/action_status");
     declare_parameter<std::string>("camera_cmd_topic", "/jandi_vision/camera_cmd");
@@ -163,20 +160,8 @@ public:
     declare_parameter<bool>("show_debug_view", true);
     // YOLO의 필터 전 raw detection bbox를 별도 창에서 확인할 때만 켠다.
     declare_parameter<bool>("show_yolo_debug_view", false);
-    declare_parameter<double>("inference_hz", 1.0 / std::max(algorithm_defaults.line_observation_dt, 1e-6));
+    declare_parameter<double>("inference_hz", 15.0);
     declare_parameter<int>("max_centers", algorithm_defaults.line_features.max_centers);
-    declare_parameter<double>("lookahead_delta_v_px", algorithm_defaults.line_features.lookahead_delta_v_px);
-    declare_parameter<double>("lookahead_alpha_normal", algorithm_defaults.line_features.lookahead_alpha_normal);
-    declare_parameter<double>("lookahead_alpha_recovery", algorithm_defaults.line_features.lookahead_alpha_recovery);
-    declare_parameter<double>("recover_enter_nvis", algorithm_defaults.line_features.recover_enter_nvis);
-    declare_parameter<double>("recover_exit_nvis", algorithm_defaults.line_features.recover_exit_nvis);
-    declare_parameter<double>("recover_enter_u", algorithm_defaults.line_features.recover_enter_u);
-    declare_parameter<double>("recover_exit_u", algorithm_defaults.line_features.recover_exit_u);
-    declare_parameter<double>("vx_prev_min", 0.0);               // 이전 vx clamp 최소값
-    declare_parameter<double>("vx_prev_max", 1.2);               // 이전 vx clamp 최대값
-    declare_parameter<double>("wz_prev_min", -1.9);              // 이전 wz clamp 최소값
-    declare_parameter<double>("wz_prev_max", 1.9);               // 이전 wz clamp 최대값
-    declare_parameter<bool>("enable_rule_controller", true);     // 최종 cmd publish 여부
     // 실제 카메라 request/feedback ROS I/O는 아직 없으므로 안전하게 기본 OFF.
     // true이면 코어의 시간 추정 compatibility 경로로만 임시 시퀀스를 확인한다.
     declare_parameter<bool>("enable_ball_controller", algorithm_defaults.enable_ball);
@@ -184,37 +169,6 @@ public:
     declare_parameter<bool>("enable_goal_controller", algorithm_defaults.enable_goal);
     // all은 위 enable_* 값을 따르고, 나머지는 지정한 알고리즘 하나만 실행한다.
     declare_parameter<std::string>("algorithm_mode", "all");
-    // 실제 로봇은 모든 보행을 /action_cmd로 출력한다. velocity는 호환 시험용이다.
-    declare_parameter<std::string>(
-        "locomotion_backend",
-        algorithm_defaults.command.locomotion_backend ==
-                vision_core::LocomotionBackend::kP2pAction
-            ? "p2p"
-            : "velocity");
-    declare_parameter<double>("p2p_forward_deadband", algorithm_defaults.command.p2p.forward_deadband);
-    declare_parameter<double>("p2p_lateral_deadband", algorithm_defaults.command.p2p.lateral_deadband);
-    declare_parameter<double>("p2p_yaw_deadband", algorithm_defaults.command.p2p.yaw_deadband);
-    declare_parameter<double>("p2p_long_forward_vx", algorithm_defaults.command.p2p.long_forward_vx);
-    declare_parameter<double>("p2p_curve_yaw_threshold", algorithm_defaults.command.p2p.curve_yaw_threshold);
-    declare_parameter<double>("p2p_sharp_turn_yaw_threshold", algorithm_defaults.command.p2p.sharp_turn_yaw_threshold);
-    declare_parameter<double>("p2p_turn_in_place_vx_max", algorithm_defaults.command.p2p.turn_in_place_vx_max);
-    declare_parameter<double>("p2p_lateral_dominance_ratio", algorithm_defaults.command.p2p.lateral_dominance_ratio);
-    declare_parameter<double>("p2p_fine_forward_deadband", algorithm_defaults.command.p2p_fine.forward_deadband);
-    declare_parameter<double>("p2p_fine_lateral_deadband", algorithm_defaults.command.p2p_fine.lateral_deadband);
-    declare_parameter<double>("p2p_fine_yaw_deadband", algorithm_defaults.command.p2p_fine.yaw_deadband);
-    declare_parameter<double>("p2p_fine_long_forward_vx", algorithm_defaults.command.p2p_fine.long_forward_vx);
-    declare_parameter<double>("p2p_fine_curve_yaw_threshold", algorithm_defaults.command.p2p_fine.curve_yaw_threshold);
-    declare_parameter<double>("p2p_fine_sharp_turn_yaw_threshold", algorithm_defaults.command.p2p_fine.sharp_turn_yaw_threshold);
-    declare_parameter<double>("p2p_fine_turn_in_place_vx_max", algorithm_defaults.command.p2p_fine.turn_in_place_vx_max);
-    declare_parameter<double>("p2p_fine_lateral_dominance_ratio", algorithm_defaults.command.p2p_fine.lateral_dominance_ratio);
-    declare_parameter<double>("p2p_recovery_forward_deadband", algorithm_defaults.command.p2p_recovery.forward_deadband);
-    declare_parameter<double>("p2p_recovery_lateral_deadband", algorithm_defaults.command.p2p_recovery.lateral_deadband);
-    declare_parameter<double>("p2p_recovery_yaw_deadband", algorithm_defaults.command.p2p_recovery.yaw_deadband);
-    declare_parameter<double>("p2p_recovery_long_forward_vx", algorithm_defaults.command.p2p_recovery.long_forward_vx);
-    declare_parameter<double>("p2p_recovery_curve_yaw_threshold", algorithm_defaults.command.p2p_recovery.curve_yaw_threshold);
-    declare_parameter<double>("p2p_recovery_sharp_turn_yaw_threshold", algorithm_defaults.command.p2p_recovery.sharp_turn_yaw_threshold);
-    declare_parameter<double>("p2p_recovery_turn_in_place_vx_max", algorithm_defaults.command.p2p_recovery.turn_in_place_vx_max);
-    declare_parameter<double>("p2p_recovery_lateral_dominance_ratio", algorithm_defaults.command.p2p_recovery.lateral_dominance_ratio);
     // 실제 카메라 모터 ROS I/O 연결 전 단독 알고리즘 시험용 endpoint 피드백이다.
     declare_parameter<bool>("simulate_camera_feedback", false);
     // 카메라 기반 판단만 시험할 때 Action 실행기의 ACK/DONE을 내부 모사한다.
@@ -228,7 +182,6 @@ public:
     declare_parameter<double>("simulate_turn_duration_sec", 1.0);
     declare_parameter<double>("simulate_ready_lead_sec", 0.25);
     declare_parameter<bool>("enable_command_transport", true);
-    declare_parameter<double>("rl_stop_duration_sec", algorithm_defaults.ball.rl_stop_duration_sec);
     declare_parameter<double>("max_depth_age_sec", 0.20);
     declare_parameter<double>("backboard_min_depth_m", algorithm_defaults.backboard_min_depth_m);
     declare_parameter<double>("backboard_max_depth_m", algorithm_defaults.backboard_max_depth_m);
@@ -236,75 +189,12 @@ public:
     declare_parameter<double>("goal_hoop_radius_m", algorithm_defaults.goal.hoop_radius_m);
     declare_parameter<double>("goal_throwing_range_m", algorithm_defaults.goal.throwing_range_m);
     declare_parameter<double>("goal_position_tolerance_m", algorithm_defaults.goal.position_tolerance_m);
-    declare_parameter<double>("cmd_vx_min", algorithm_defaults.line.cmd_vx_min);
-    declare_parameter<double>("cmd_vx_max", algorithm_defaults.line.cmd_vx_max);
-    declare_parameter<double>("cmd_wz_min", algorithm_defaults.line.cmd_wz_min);
-    declare_parameter<double>("cmd_wz_max", algorithm_defaults.line.cmd_wz_max);
-    declare_parameter<double>("rule_v_base", algorithm_defaults.line.v_base);
-    declare_parameter<double>("rule_k_u", algorithm_defaults.line.k_u);
-    declare_parameter<double>("rule_k_slope", algorithm_defaults.line.k_slope);
-    declare_parameter<double>("rule_k_v_u", algorithm_defaults.line.k_v_u);
-    declare_parameter<double>("rule_k_v_slope", algorithm_defaults.line.k_v_slope);
-    declare_parameter<double>("rule_dv_max", algorithm_defaults.line.dv_max);
-    declare_parameter<double>("rule_dw_max", algorithm_defaults.line.dw_max);
-    declare_parameter<double>("rule_recover_vx", algorithm_defaults.line.recover_vx);
-    declare_parameter<double>("rule_recover_wz", algorithm_defaults.line.recover_wz);
-    declare_parameter<double>("rule_low_visible_n", algorithm_defaults.line.low_visible_n);
-    declare_parameter<double>("rule_no_visible_n", algorithm_defaults.line.no_visible_n);
-    declare_parameter<double>("rule_low_visible_vx", algorithm_defaults.line.low_visible_vx);
-    declare_parameter<double>("rule_no_visible_vx", algorithm_defaults.line.no_visible_vx);
-    declare_parameter<double>("rule_low_visible_wz_decay", algorithm_defaults.line.low_visible_wz_decay);
-    declare_parameter<double>("rule_no_visible_wz_decay", algorithm_defaults.line.no_visible_wz_decay);
-    declare_parameter<int>("ball_stable_window", algorithm_defaults.ball.stable_window);
-    declare_parameter<int>("ball_stable_min_hits", algorithm_defaults.ball.stable_min_hits);
-    declare_parameter<int>("ball_lost_frames", algorithm_defaults.ball.lost_frames);
-    declare_parameter<double>("ball_smooth_alpha", algorithm_defaults.ball.smooth_alpha);
-    declare_parameter<double>("ball_far_u_des_norm", algorithm_defaults.ball.far_u_des_norm);
-    declare_parameter<double>("ball_far_vx", algorithm_defaults.ball.far_vx);
-    declare_parameter<double>("ball_far_vx_min", algorithm_defaults.ball.far_vx_min);
-    declare_parameter<double>("ball_far_wz_max", algorithm_defaults.ball.far_wz_max);
-    declare_parameter<double>("ball_far_heading_gain", algorithm_defaults.ball.far_heading_gain);
-    declare_parameter<double>("ball_far_slow_by_turn", algorithm_defaults.ball.far_slow_by_turn);
-    declare_parameter<double>("ball_far_dv_max", algorithm_defaults.ball.far_dv_max);
-    declare_parameter<double>("ball_far_dw_max", algorithm_defaults.ball.far_dw_max);
-    declare_parameter<double>("ball_far_speed_scale", algorithm_defaults.ball.far_speed_scale);
-    declare_parameter<double>("ball_tilt_down_v_norm", algorithm_defaults.ball.tilt_down_v_norm);
-    declare_parameter<int>("ball_tilt_down_window", algorithm_defaults.ball.tilt_down_window);
-    declare_parameter<int>("ball_tilt_down_min_hits", algorithm_defaults.ball.tilt_down_min_hits);
-    declare_parameter<double>("ball_tilt_down_h_norm", algorithm_defaults.ball.tilt_down_h_norm);
-    declare_parameter<double>("camera_tilt_duration_sec", algorithm_defaults.ball.camera_tilt_duration_sec);
-    declare_parameter<double>("camera_settle_sec", algorithm_defaults.ball.camera_settle_sec);
-    declare_parameter<double>("camera_return_duration_sec", algorithm_defaults.ball.camera_return_duration_sec);
     declare_parameter<double>("camera_motion_timeout_sec", algorithm_defaults.ball.camera_motion_timeout_sec);
-    declare_parameter<int>("ball_hold_cmd_window", algorithm_defaults.ball.hold_cmd_window);
-    declare_parameter<double>("ball_hold_vx_min", algorithm_defaults.ball.hold_vx_min);
-    declare_parameter<double>("ball_hold_vx_max", algorithm_defaults.ball.hold_vx_max);
-    declare_parameter<double>("ball_hold_wz_max", algorithm_defaults.ball.hold_wz_max);
-    declare_parameter<double>("ball_hold_default_vx", algorithm_defaults.ball.hold_default_vx);
-    declare_parameter<double>("ball_tilt_walk_speed_scale", algorithm_defaults.ball.tilt_walk_speed_scale);
-    declare_parameter<double>("ball_tilt_walk_vx_max", algorithm_defaults.ball.tilt_walk_vx_max);
-    declare_parameter<double>("ball_fine_adjust_placeholder_vx", algorithm_defaults.ball.fine_adjust_placeholder_vx);
-    declare_parameter<double>("ball_fine_adjust_placeholder_sec", algorithm_defaults.ball.fine_adjust_placeholder_duration_sec);
-    declare_parameter<double>("ball_pickup_placeholder_sec", algorithm_defaults.ball.pickup_placeholder_duration_sec);
-    declare_parameter<double>("ball_ignore_duration_sec", algorithm_defaults.ball.ball_ignore_duration_sec);
-    declare_parameter<double>("ball_near_target_u_norm", algorithm_defaults.ball.near_target_u_norm);
-    declare_parameter<double>("ball_near_target_v_norm", algorithm_defaults.ball.near_target_v_norm);
-    declare_parameter<double>("ball_near_kx", algorithm_defaults.ball.near_kx);
-    declare_parameter<double>("ball_near_ky", algorithm_defaults.ball.near_ky);
-    declare_parameter<double>("ball_near_wz_gain", algorithm_defaults.ball.near_wz_gain);
-    declare_parameter<double>("ball_near_vx_max", algorithm_defaults.ball.near_vx_max);
-    declare_parameter<double>("ball_near_vy_max", algorithm_defaults.ball.near_vy_max);
-    declare_parameter<double>("ball_near_wz_max", algorithm_defaults.ball.near_wz_max);
-    declare_parameter<double>("ball_near_x_tol", algorithm_defaults.ball.near_x_tol);
-    declare_parameter<double>("ball_near_y_tol", algorithm_defaults.ball.near_y_tol);
-    declare_parameter<bool>("ball_near_use_lateral", algorithm_defaults.ball.near_use_lateral);
 
     image_topic_ = get_parameter("image_topic").as_string();
     depth_topic_ = get_parameter("depth_topic").as_string();
     camera_info_topic_ = get_parameter("camera_info_topic").as_string();
     imu_topic_ = get_parameter("imu_topic").as_string();
-    prev_cmd_topic_ = get_parameter("prev_cmd_topic").as_string();
-    cmd_topic_ = get_parameter("cmd_topic").as_string();
     action_cmd_topic_ = get_parameter("action_cmd_topic").as_string();
     action_status_topic_ = get_parameter("action_status_topic").as_string();
     camera_cmd_topic_ = get_parameter("camera_cmd_topic").as_string();
@@ -327,16 +217,10 @@ public:
     show_yolo_debug_view_ =
         get_parameter("show_yolo_debug_view").as_bool();
     inference_hz_ = get_parameter("inference_hz").as_double();
-    vx_prev_min_ = get_parameter("vx_prev_min").as_double();
-    vx_prev_max_ = get_parameter("vx_prev_max").as_double();
-    wz_prev_min_ = get_parameter("wz_prev_min").as_double();
-    wz_prev_max_ = get_parameter("wz_prev_max").as_double();
-    enable_rule_controller_ = get_parameter("enable_rule_controller").as_bool();
     enable_ball_controller_ = get_parameter("enable_ball_controller").as_bool();
     enable_hurdle_controller_ = get_parameter("enable_hurdle_controller").as_bool();
     enable_goal_controller_ = get_parameter("enable_goal_controller").as_bool();
     algorithm_mode_ = get_parameter("algorithm_mode").as_string();
-    locomotion_backend_ = get_parameter("locomotion_backend").as_string();
     simulate_camera_feedback_ = get_parameter("simulate_camera_feedback").as_bool();
     simulate_decision_ = get_parameter("simulate_decision").as_bool();
     simulate_action_duration_sec_ =
@@ -357,85 +241,8 @@ public:
         algorithm_mode_ != "hurdle" && algorithm_mode_ != "goal") {
       throw std::invalid_argument("algorithm_mode must be one of: all, line, ball, hurdle, goal");
     }
-    if (locomotion_backend_ != "velocity" && locomotion_backend_ != "p2p") {
-      throw std::invalid_argument(
-          "locomotion_backend must be one of: velocity, p2p");
-    }
-    vision_core::RuleConfig line_cmd_cfg = algorithm_defaults.line;
-    line_cmd_cfg.cmd_vx_min = get_parameter("cmd_vx_min").as_double();
-    line_cmd_cfg.cmd_vx_max = get_parameter("cmd_vx_max").as_double();
-    line_cmd_cfg.cmd_wz_min = get_parameter("cmd_wz_min").as_double();
-    line_cmd_cfg.cmd_wz_max = get_parameter("cmd_wz_max").as_double();
-    line_cmd_cfg.v_base = get_parameter("rule_v_base").as_double();
-    line_cmd_cfg.k_u = get_parameter("rule_k_u").as_double();
-    line_cmd_cfg.k_slope = get_parameter("rule_k_slope").as_double();
-    line_cmd_cfg.k_v_u = get_parameter("rule_k_v_u").as_double();
-    line_cmd_cfg.k_v_slope = get_parameter("rule_k_v_slope").as_double();
-    line_cmd_cfg.dv_max = get_parameter("rule_dv_max").as_double();
-    line_cmd_cfg.dw_max = get_parameter("rule_dw_max").as_double();
-    line_cmd_cfg.recover_vx = get_parameter("rule_recover_vx").as_double();
-    line_cmd_cfg.recover_wz = get_parameter("rule_recover_wz").as_double();
-    line_cmd_cfg.low_visible_n = get_parameter("rule_low_visible_n").as_double();
-    line_cmd_cfg.no_visible_n = get_parameter("rule_no_visible_n").as_double();
-    line_cmd_cfg.low_visible_vx = get_parameter("rule_low_visible_vx").as_double();
-    line_cmd_cfg.no_visible_vx = get_parameter("rule_no_visible_vx").as_double();
-    line_cmd_cfg.low_visible_wz_decay = get_parameter("rule_low_visible_wz_decay").as_double();
-    line_cmd_cfg.no_visible_wz_decay = get_parameter("rule_no_visible_wz_decay").as_double();
-
     vision_core::BallConfig ball_cmd_cfg = algorithm_defaults.ball;
-    ball_cmd_cfg.stable_window = static_cast<int>(get_parameter("ball_stable_window").as_int());
-    ball_cmd_cfg.stable_min_hits = static_cast<int>(get_parameter("ball_stable_min_hits").as_int());
-    ball_cmd_cfg.lost_frames = static_cast<int>(get_parameter("ball_lost_frames").as_int());
-    ball_cmd_cfg.smooth_alpha = get_parameter("ball_smooth_alpha").as_double();
-    ball_cmd_cfg.far_u_des_norm = get_parameter("ball_far_u_des_norm").as_double();
-    ball_cmd_cfg.far_vx = get_parameter("ball_far_vx").as_double();
-    ball_cmd_cfg.far_vx_min = get_parameter("ball_far_vx_min").as_double();
-    ball_cmd_cfg.far_wz_max = get_parameter("ball_far_wz_max").as_double();
-    ball_cmd_cfg.far_heading_gain = get_parameter("ball_far_heading_gain").as_double();
-    ball_cmd_cfg.far_slow_by_turn = get_parameter("ball_far_slow_by_turn").as_double();
-    ball_cmd_cfg.far_dv_max = get_parameter("ball_far_dv_max").as_double();
-    ball_cmd_cfg.far_dw_max = get_parameter("ball_far_dw_max").as_double();
-    ball_cmd_cfg.far_speed_scale = get_parameter("ball_far_speed_scale").as_double();
-    ball_cmd_cfg.tilt_down_v_norm = get_parameter("ball_tilt_down_v_norm").as_double();
-    ball_cmd_cfg.tilt_down_window = static_cast<int>(get_parameter("ball_tilt_down_window").as_int());
-    ball_cmd_cfg.tilt_down_min_hits = static_cast<int>(get_parameter("ball_tilt_down_min_hits").as_int());
-    ball_cmd_cfg.tilt_down_h_norm = get_parameter("ball_tilt_down_h_norm").as_double();
-    ball_cmd_cfg.camera_tilt_duration_sec = get_parameter("camera_tilt_duration_sec").as_double();
-    ball_cmd_cfg.camera_settle_sec = get_parameter("camera_settle_sec").as_double();
-    ball_cmd_cfg.camera_return_duration_sec = get_parameter("camera_return_duration_sec").as_double();
     ball_cmd_cfg.camera_motion_timeout_sec = get_parameter("camera_motion_timeout_sec").as_double();
-    ball_cmd_cfg.hold_cmd_window = static_cast<int>(get_parameter("ball_hold_cmd_window").as_int());
-    ball_cmd_cfg.hold_vx_min = get_parameter("ball_hold_vx_min").as_double();
-    ball_cmd_cfg.hold_vx_max = get_parameter("ball_hold_vx_max").as_double();
-    ball_cmd_cfg.hold_wz_max = get_parameter("ball_hold_wz_max").as_double();
-    ball_cmd_cfg.hold_default_vx = get_parameter("ball_hold_default_vx").as_double();
-    ball_cmd_cfg.tilt_walk_speed_scale = get_parameter("ball_tilt_walk_speed_scale").as_double();
-    ball_cmd_cfg.tilt_walk_vx_max = get_parameter("ball_tilt_walk_vx_max").as_double();
-    ball_cmd_cfg.fine_adjust_placeholder_vx = get_parameter("ball_fine_adjust_placeholder_vx").as_double();
-    ball_cmd_cfg.fine_adjust_placeholder_duration_sec = get_parameter("ball_fine_adjust_placeholder_sec").as_double();
-    ball_cmd_cfg.pickup_placeholder_duration_sec = get_parameter("ball_pickup_placeholder_sec").as_double();
-    ball_cmd_cfg.rl_stop_duration_sec = get_parameter("rl_stop_duration_sec").as_double();
-    ball_cmd_cfg.ball_ignore_duration_sec = get_parameter("ball_ignore_duration_sec").as_double();
-    ball_cmd_cfg.near_target_u_norm = get_parameter("ball_near_target_u_norm").as_double();
-    ball_cmd_cfg.near_target_v_norm = get_parameter("ball_near_target_v_norm").as_double();
-    ball_cmd_cfg.near_kx = get_parameter("ball_near_kx").as_double();
-    ball_cmd_cfg.near_ky = get_parameter("ball_near_ky").as_double();
-    ball_cmd_cfg.near_wz_gain = get_parameter("ball_near_wz_gain").as_double();
-    ball_cmd_cfg.near_vx_max = get_parameter("ball_near_vx_max").as_double();
-    ball_cmd_cfg.near_vy_max = get_parameter("ball_near_vy_max").as_double();
-    ball_cmd_cfg.near_wz_max = get_parameter("ball_near_wz_max").as_double();
-    ball_cmd_cfg.near_x_tol = get_parameter("ball_near_x_tol").as_double();
-    ball_cmd_cfg.near_y_tol = get_parameter("ball_near_y_tol").as_double();
-    ball_cmd_cfg.near_use_lateral = get_parameter("ball_near_use_lateral").as_bool();
-    if (!std::isfinite(ball_cmd_cfg.far_u_des_norm) ||
-        ball_cmd_cfg.far_u_des_norm < 0.0 ||
-        ball_cmd_cfg.far_u_des_norm > 1.0 ||
-        !std::isfinite(ball_cmd_cfg.near_target_u_norm) ||
-        ball_cmd_cfg.near_target_u_norm < 0.0 ||
-        ball_cmd_cfg.near_target_u_norm > 1.0) {
-      throw std::invalid_argument(
-          "BALL target_u_norm parameters must be finite and in [0, 1]");
-    }
 
     const double fx = get_parameter("fx").as_double();
     const double fy = get_parameter("fy").as_double();
@@ -445,13 +252,6 @@ public:
     vision_core::FeatureConfig line_feature_cfg = algorithm_defaults.line_features;
     line_feature_cfg.max_centers = static_cast<int>(get_parameter("max_centers").as_int());
     line_feature_cfg.image_center_u = cx;
-    line_feature_cfg.lookahead_delta_v_px = get_parameter("lookahead_delta_v_px").as_double();
-    line_feature_cfg.lookahead_alpha_normal = get_parameter("lookahead_alpha_normal").as_double();
-    line_feature_cfg.lookahead_alpha_recovery = get_parameter("lookahead_alpha_recovery").as_double();
-    line_feature_cfg.recover_enter_nvis = get_parameter("recover_enter_nvis").as_double();
-    line_feature_cfg.recover_exit_nvis = get_parameter("recover_exit_nvis").as_double();
-    line_feature_cfg.recover_enter_u = get_parameter("recover_enter_u").as_double();
-    line_feature_cfg.recover_exit_u = get_parameter("recover_exit_u").as_double();
 
     if (engine_path_.empty()) {
       throw std::runtime_error("YOLO TensorRT engine 경로(engine_path)가 비어 있습니다.");
@@ -459,11 +259,9 @@ public:
 
     yolo_ = std::make_unique<YoloTrtEngine>(engine_path_, 640, 640, conf_thres_);
     vision_core::HurdleConfig hurdle_cmd_cfg = algorithm_defaults.hurdle;
-    hurdle_cmd_cfg.rl_stop_duration_sec = get_parameter("rl_stop_duration_sec").as_double();
     hurdle_cmd_cfg.camera_motion_timeout_sec =
         get_parameter("camera_motion_timeout_sec").as_double();
     vision_core::GoalConfig goal_cmd_cfg = algorithm_defaults.goal;
-    goal_cmd_cfg.rl_stop_duration_sec = get_parameter("rl_stop_duration_sec").as_double();
     goal_cmd_cfg.camera_motion_timeout_sec =
         get_parameter("camera_motion_timeout_sec").as_double();
     goal_cmd_cfg.fine_adjust_start_z_m =
@@ -476,7 +274,7 @@ public:
         get_parameter("goal_position_tolerance_m").as_double();
     vision_core::MissionControllerConfig mission_config = algorithm_defaults;
     mission_config.line_features = line_feature_cfg;
-    mission_config.line = line_cmd_cfg;
+    mission_config.line = algorithm_defaults.line;
     mission_config.ball = ball_cmd_cfg;
     mission_config.hurdle = hurdle_cmd_cfg;
     mission_config.goal = goal_cmd_cfg;
@@ -499,60 +297,6 @@ public:
         get_parameter("backboard_min_depth_m").as_double();
     mission_config.backboard_max_depth_m =
         get_parameter("backboard_max_depth_m").as_double();
-    mission_config.command.locomotion_backend =
-        locomotion_backend_ == "p2p"
-            ? vision_core::LocomotionBackend::kP2pAction
-            : vision_core::LocomotionBackend::kVelocity;
-    mission_config.command.p2p.forward_deadband =
-        get_parameter("p2p_forward_deadband").as_double();
-    mission_config.command.p2p.lateral_deadband =
-        get_parameter("p2p_lateral_deadband").as_double();
-    mission_config.command.p2p.yaw_deadband =
-        get_parameter("p2p_yaw_deadband").as_double();
-    mission_config.command.p2p.long_forward_vx =
-        get_parameter("p2p_long_forward_vx").as_double();
-    mission_config.command.p2p.curve_yaw_threshold =
-        get_parameter("p2p_curve_yaw_threshold").as_double();
-    mission_config.command.p2p.sharp_turn_yaw_threshold =
-        get_parameter("p2p_sharp_turn_yaw_threshold").as_double();
-    mission_config.command.p2p.turn_in_place_vx_max =
-        get_parameter("p2p_turn_in_place_vx_max").as_double();
-    mission_config.command.p2p.lateral_dominance_ratio =
-        get_parameter("p2p_lateral_dominance_ratio").as_double();
-    mission_config.command.p2p_fine.forward_deadband =
-        get_parameter("p2p_fine_forward_deadband").as_double();
-    mission_config.command.p2p_fine.lateral_deadband =
-        get_parameter("p2p_fine_lateral_deadband").as_double();
-    mission_config.command.p2p_fine.yaw_deadband =
-        get_parameter("p2p_fine_yaw_deadband").as_double();
-    mission_config.command.p2p_fine.long_forward_vx =
-        get_parameter("p2p_fine_long_forward_vx").as_double();
-    mission_config.command.p2p_fine.curve_yaw_threshold =
-        get_parameter("p2p_fine_curve_yaw_threshold").as_double();
-    mission_config.command.p2p_fine.sharp_turn_yaw_threshold =
-        get_parameter("p2p_fine_sharp_turn_yaw_threshold").as_double();
-    mission_config.command.p2p_fine.turn_in_place_vx_max =
-        get_parameter("p2p_fine_turn_in_place_vx_max").as_double();
-    mission_config.command.p2p_fine.lateral_dominance_ratio =
-        get_parameter("p2p_fine_lateral_dominance_ratio").as_double();
-    mission_config.command.p2p_recovery.forward_deadband =
-        get_parameter("p2p_recovery_forward_deadband").as_double();
-    mission_config.command.p2p_recovery.lateral_deadband =
-        get_parameter("p2p_recovery_lateral_deadband").as_double();
-    mission_config.command.p2p_recovery.yaw_deadband =
-        get_parameter("p2p_recovery_yaw_deadband").as_double();
-    mission_config.command.p2p_recovery.long_forward_vx =
-        get_parameter("p2p_recovery_long_forward_vx").as_double();
-    mission_config.command.p2p_recovery.curve_yaw_threshold =
-        get_parameter("p2p_recovery_curve_yaw_threshold").as_double();
-    mission_config.command.p2p_recovery.sharp_turn_yaw_threshold =
-        get_parameter("p2p_recovery_sharp_turn_yaw_threshold").as_double();
-    mission_config.command.p2p_recovery.turn_in_place_vx_max =
-        get_parameter("p2p_recovery_turn_in_place_vx_max").as_double();
-    mission_config.command.p2p_recovery.lateral_dominance_ratio =
-        get_parameter("p2p_recovery_lateral_dominance_ratio").as_double();
-    mission_config.line_observation_dt =
-        1.0 / std::max(inference_hz_, 1e-6);
     mission_config.enable_ball =
         algorithm_mode_ == "ball" ||
         (algorithm_mode_ == "all" && enable_ball_controller_);
@@ -592,10 +336,6 @@ public:
                     std::placeholders::_1));
     }
 
-    prev_cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
-        prev_cmd_topic_, rclcpp::QoS(5), std::bind(&LinePerceptionNode::OnPrevCmd, this, std::placeholders::_1));
-
-    cmd_pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_topic_, rclcpp::QoS(10));
     auto command_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile();
     action_cmd_pub_ = create_publisher<vision::msg::ActionCommand>(action_cmd_topic_, command_qos);
     camera_cmd_pub_ = create_publisher<vision::msg::CameraCommand>(camera_cmd_topic_, command_qos);
@@ -611,13 +351,10 @@ public:
     RCLCPP_INFO(get_logger(), "  depth_topic    : %s", depth_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  camera_info    : %s", camera_info_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  imu_topic      : %s", imu_topic_.c_str());
-    RCLCPP_INFO(get_logger(), "  prev_cmd_topic : %s", prev_cmd_topic_.c_str());
-    RCLCPP_INFO(get_logger(), "  cmd_topic      : %s", cmd_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  action_cmd     : %s", action_cmd_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  action_status  : %s", action_status_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  camera_cmd     : %s", camera_cmd_topic_.c_str());
     RCLCPP_INFO(get_logger(), "  camera_status  : %s", camera_status_topic_.c_str());
-    RCLCPP_INFO(get_logger(), "  locomotion     : %s", locomotion_backend_.c_str());
     RCLCPP_INFO(get_logger(), "  engine_path    : %s", engine_path_.c_str());
     RCLCPP_INFO(get_logger(), "  line_class_id  : %d", line_class_id_);
     RCLCPP_INFO(get_logger(), "  ball_class_id  : %d", ball_class_id_);
@@ -631,7 +368,6 @@ public:
     RCLCPP_INFO(get_logger(), "  inference_hz   : %.2f", inference_hz_);
     RCLCPP_INFO(get_logger(), "  imu_rectify    : %s", use_imu_rectification_ ? "true" : "false");
     RCLCPP_INFO(get_logger(), "  zero_imu       : %s", assume_zero_imu_ ? "true" : "false");
-    RCLCPP_INFO(get_logger(), "  rule_ctrl      : %s", enable_rule_controller_ ? "true" : "false");
     RCLCPP_INFO(get_logger(), "  ball_ctrl      : %s", enable_ball_controller_ ? "true" : "false");
     RCLCPP_INFO(get_logger(), "  hurdle_ctrl    : %s", enable_hurdle_controller_ ? "true" : "false");
     RCLCPP_INFO(get_logger(), "  goal_ctrl      : %s", enable_goal_controller_ ? "true" : "false");
@@ -663,7 +399,6 @@ public:
 
     RCLCPP_INFO(get_logger(), "[SETUP] image subscription created (SensorDataQoS)");
     RCLCPP_INFO(get_logger(), "[SETUP] imu subscription created");
-    RCLCPP_INFO(get_logger(), "[SETUP] cmd publisher created");
 
     if (show_debug_view_ || show_yolo_debug_view_) {
       try {
@@ -770,6 +505,7 @@ private:
     case MissionAction::kShoot: return "SHOOT";
     case MissionAction::kTurnLeftAndStep: return "TURN_LEFT_AND_STEP";
     case MissionAction::kTurnRightAndStep: return "TURN_RIGHT_AND_STEP";
+    case MissionAction::kContactWalk: return "CONTACT_WALK_RESERVED";
     }
     return "UNKNOWN";
   }
@@ -849,12 +585,6 @@ private:
       output.push_back(observation);
     }
     return output;
-  }
-
-  void OnPrevCmd(const geometry_msgs::msg::Twist::SharedPtr msg) {
-    ++prev_cmd_count_;
-    vx_prev_ = Clamp(static_cast<double>(msg->linear.x), vx_prev_min_, vx_prev_max_);
-    wz_prev_ = Clamp(static_cast<double>(msg->angular.z), wz_prev_min_, wz_prev_max_);
   }
 
   struct SimulatedActionState {
@@ -1024,10 +754,7 @@ private:
     message.action_id = command.action_id;
     message.mission = static_cast<std::uint8_t>(command.mission);
     message.action = static_cast<std::uint16_t>(command.action);
-    const double target_yaw_deg =
-        command.action_yaw_rad * 180.0 / M_PI;
-    message.target_yaw_deg = static_cast<std::int16_t>(std::lround(
-        Clamp(target_yaw_deg, -180.0, 180.0)));
+    message.target_yaw_deg = command.target_yaw_deg;
     action_cmd_pub_->publish(message);
     last_action_id_ = command.action_id;
     last_action_category_ = command.action_category;
@@ -1397,8 +1124,6 @@ private:
     perception_input.imu_valid = imu_ready_snapshot;
     perception_input.roll_rad = roll;
     perception_input.pitch_rad = pitch;
-    perception_input.previous_vx = vx_prev_;
-    perception_input.previous_wz = wz_prev_;
     perception_input.image_width = bgr.cols;
     perception_input.image_height = bgr.rows;
     perception_input.now_sec = frame_now_sec;
@@ -1443,10 +1168,6 @@ private:
         control_command.mission == vision_core::MissionType::kHurdle;
     const bool selected_goal =
         control_command.mission == vision_core::MissionType::kGoal;
-    // core가 최종 P2P action과 함께 반환한 양자화 전 연속속도 의도다.
-    // ROS wire action 메시지는 그대로 두고 디버그 화면에서만 표시한다.
-    const vision_core::MotionCommand requested_motion =
-        control_command.pre_p2p_motion;
     const char *selected_mode =
         selected_ball
             ? vision_core::BallController::ModeName(ball_cmd.mode)
@@ -1454,20 +1175,7 @@ private:
                    ? vision_core::HurdleController::ModeName(hurdle_cmd.mode)
                    : (selected_goal
                           ? vision_core::GoalController::ModeName(goal_cmd.mode)
-                          : "LINE_RULE"));
-
-    geometry_msgs::msg::Twist selected_cmd;
-    selected_cmd.linear.x = control_command.velocity.vx;
-    selected_cmd.linear.y = control_command.velocity.vy;
-    selected_cmd.angular.z = control_command.velocity.wz;
-
-    vx_prev_ = Clamp(static_cast<double>(selected_cmd.linear.x), vx_prev_min_, vx_prev_max_);
-    wz_prev_ = Clamp(static_cast<double>(selected_cmd.angular.z), wz_prev_min_, wz_prev_max_);
-
-    if (enable_rule_controller_ && locomotion_backend_ == "velocity") {
-      cmd_pub_->publish(selected_cmd);
-      ++pub_count_;
-    }
+                          : "LINE_P2P"));
     PublishActionCommand(control_command);
     PublishCameraCommand(control_command.camera_request);
     action_delivery_feedback_ = {};
@@ -1486,8 +1194,8 @@ private:
 
         if (show_debug_view_) {
           const bool line_confirmed =
-              mission_result.line_computed && feats.n_visible > 0.0 &&
-              feats.in_recovery <= 0.5;
+              mission_result.line_computed && feats.guide.valid &&
+              !mission_result.line_in_recovery;
           const bool ball_confirmed =
               ball_target && ball_cmd.tracked.stable &&
               ball_cmd.tracked.visible;
@@ -1526,33 +1234,15 @@ private:
                       cv::FONT_HERSHEY_SIMPLEX, 0.70,
                       cv::Scalar(0, 255, 0), 2);
           char overlay[256];
-          const bool show_p2p_action = locomotion_backend_ == "p2p";
-          if (show_p2p_action) {
-            std::snprintf(
-                overlay, sizeof(overlay),
-                "MODE: %s | ACTION: %u %s", selected_mode,
-                static_cast<unsigned int>(control_command.action),
-                ActionName(control_command.action));
-          } else {
-            std::snprintf(overlay, sizeof(overlay),
-                          "MODE: %s | CMD: vx=%+.3f vy=%+.3f wz=%+.3f",
-                          selected_mode, selected_cmd.linear.x,
-                          selected_cmd.linear.y, selected_cmd.angular.z);
-          }
+          const bool show_p2p_action = true;
+          std::snprintf(overlay, sizeof(overlay),
+                        "MODE: %s | ACTION: %u %s", selected_mode,
+                        static_cast<unsigned int>(control_command.action),
+                        ActionName(control_command.action));
           cv::putText(vis, overlay, cv::Point(10, 48),
                       cv::FONT_HERSHEY_SIMPLEX,
                       show_p2p_action ? 0.55 : 0.70,
                       cv::Scalar(0, 200, 255), 2);
-          if (show_p2p_action) {
-            std::snprintf(
-                overlay, sizeof(overlay),
-                "PRE-P2P: vx=%+.3f vy=%+.3f wz=%+.3f",
-                requested_motion.vx, requested_motion.vy,
-                requested_motion.wz);
-            cv::putText(vis, overlay, cv::Point(10, 70),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.55,
-                        cv::Scalar(0, 200, 255), 2);
-          }
 
           cv::Mat state_panel(360, 1100, CV_8UC3,
                               cv::Scalar(20, 20, 20));
@@ -1579,9 +1269,10 @@ private:
 
           if (line_confirmed) {
             std::snprintf(buf, sizeof(buf),
-                          "LINE STATE: active=%d confirmed=1 dots=%.0f u_err=%+.3f slope=%+.3f",
+                          "LINE STATE: active=%d confirmed=1 dots=%.0f offset=%+.3f heading=%+.3f",
                           selected_ball || selected_hurdle || selected_goal ? 0 : 1,
-                          feats.n_visible, feats.u_err_ctrl, feats.slope);
+                          feats.n_visible, feats.guide.offset,
+                          feats.guide.heading_rad);
           } else {
             std::snprintf(buf, sizeof(buf),
                           "LINE STATE: active=%d confirmed=0 dots=-- u_err=-- slope=--",
@@ -1714,21 +1405,25 @@ private:
 
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
                          "[TIME] yolo=%.2fms pts=%.2fms rect=%.2fms "
-                         "feat=%.2fms infer=%.2fms loop=%.2fms n=%.0f rec=%.0f "
+                         "feat=%.2fms infer=%.2fms loop=%.2fms n=%.0f recovery=%d "
                          "ball=%d goal=%d backboard=%d hurdle=%d mode=%s "
-                         "pose=%d x=%+.3f z=%.3f yaw=%+.1fdeg vx=%.3f vy=%.3f wz=%.3f",
+                         "pose=%d x=%+.3f z=%.3f yaw=%+.1fdeg action=%u",
                          static_cast<double>(dt_yolo_us) / 1000.0, static_cast<double>(dt_pts_us) / 1000.0,
                          static_cast<double>(dt_rec_us) / 1000.0, static_cast<double>(dt_feat_us) / 1000.0,
                          static_cast<double>(dt_yolo_us) / 1000.0, static_cast<double>(dt_loop_us) / 1000.0,
-                         feats.n_visible, feats.in_recovery, ball_target ? 1 : 0, goal_target ? 1 : 0,
+                         feats.n_visible, mission_result.line_in_recovery ? 1 : 0,
+                         ball_target ? 1 : 0, goal_target ? 1 : 0,
                          backboard_target ? 1 : 0, hurdle_target ? 1 : 0, selected_mode, goal_pose.valid ? 1 : 0,
-                         goal_pose.x_m, goal_pose.z_m, goal_pose.yaw_rad * 180.0 / M_PI, selected_cmd.linear.x,
-                         selected_cmd.linear.y, selected_cmd.angular.z);
+                         goal_pose.x_m, goal_pose.z_m,
+                         goal_pose.yaw_rad * 180.0 / M_PI,
+                         static_cast<unsigned int>(control_command.action));
 
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
-                         "[CMD] %s -> %s | vx=%.3f vy=%.3f wz=%.3f | line_n=%.0f ball_stable=%d request_cam_down=%d",
+                         "[ACTION] %s -> %s | id=%lu action=%u yaw=%d | line_n=%.0f ball_stable=%d request_cam_down=%d",
                          selected_goal ? "GOAL" : (selected_hurdle ? "HURDLE" : (selected_ball ? "BALL" : "LINE")),
-                         cmd_topic_.c_str(), selected_cmd.linear.x, selected_cmd.linear.y, selected_cmd.angular.z,
+                         action_cmd_topic_.c_str(), control_command.action_id,
+                         static_cast<unsigned int>(control_command.action),
+                         static_cast<int>(control_command.target_yaw_deg),
                          feats.n_visible, ball_cmd.tracked.stable ? 1 : 0,
                          ball_cmd.camera_request == vision_core::CameraRequest::kDown ? 1 : 0);
 
@@ -1742,8 +1437,6 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr imu_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr prev_cmd_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
   rclcpp::Publisher<vision::msg::ActionCommand>::SharedPtr action_cmd_pub_;
   rclcpp::Publisher<vision::msg::CameraCommand>::SharedPtr camera_cmd_pub_;
   rclcpp::Subscription<vision::msg::CommandStatus>::SharedPtr action_status_sub_;
@@ -1769,14 +1462,6 @@ private:
   sensor_msgs::msg::Image::SharedPtr latest_image_;
   sensor_msgs::msg::Image::SharedPtr latest_depth_;
   bool camera_info_ready_{false};
-  double vx_prev_{0.0};
-  double wz_prev_{0.0};
-  double vx_prev_min_{0.0};
-  double vx_prev_max_{1.2};
-  double wz_prev_min_{-1.9};
-  double wz_prev_max_{1.9};
-
-  bool enable_rule_controller_{true};
   bool enable_ball_controller_{false};
   bool enable_hurdle_controller_{false};
   bool enable_goal_controller_{false};
@@ -1809,13 +1494,11 @@ private:
   bool camera_acknowledged_{false};
   double max_depth_age_sec_{0.20};
   std::string algorithm_mode_{"all"};
-  std::string locomotion_backend_{"p2p"};
 
   // 디버그 카운터
   size_t frames_count_{0};
   size_t imu_count_{0};
   size_t pub_count_{0};
-  size_t prev_cmd_count_{0};
   double last_img_stamp_sec_{0.0};
 
   // ---- PERF 오버레이(1초 갱신) ----
@@ -1844,8 +1527,6 @@ private:
   std::string depth_topic_;
   std::string camera_info_topic_;
   std::string imu_topic_;
-  std::string prev_cmd_topic_;
-  std::string cmd_topic_;
   std::string action_cmd_topic_;
   std::string action_status_topic_;
   std::string camera_cmd_topic_;

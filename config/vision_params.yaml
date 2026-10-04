@@ -7,8 +7,6 @@ line_perception_node:
     depth_topic: "/camera/aligned_depth_to_color/image_raw"
     camera_info_topic: "/camera/color/camera_info"
     imu_topic: "/camera/imu_tilt"
-    prev_cmd_topic: "/jandi_vision/cmd_vel"
-    cmd_topic: "/jandi_vision/cmd_vel"
     action_cmd_topic: "/jandi_vision/action_cmd"
     action_status_topic: "/jandi_vision/action_status"
     camera_cmd_topic: "/jandi_vision/camera_cmd"
@@ -25,7 +23,6 @@ line_perception_node:
 
     show_debug_view: true
     show_yolo_debug_view: false
-    enable_rule_controller: true
     enable_ball_controller: true
     enable_hurdle_controller: true
     enable_goal_controller: true

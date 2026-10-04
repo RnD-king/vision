@@ -2,7 +2,7 @@
 <package format="3">
   <name>vision</name>
   <version>0.0.1</version>
-  <description>Single-node vision pipeline: Image -> YOLO(TRT) -> centers -> IMU rectification -> rule cmd_vel</description>
+  <description>P2P-only vision pipeline: Image -> YOLO(TRT) -> mission actions</description>
 
   <maintainer email="your_email@example.com">your_name</maintainer>
   <license>Apache-2.0</license>

@@ -1,97 +1,43 @@
-# 비전 공통 코어 연결 안내
+# Vision P2P control contract
 
-`/home/noh/vision_core`의 `shared_vision_core`는 실제 ROS2 비전 노드와 G1
-시뮬레이터가 함께 사용하는 비전·행동 계산 라이브러리다. 별도 ROS2 노드로
-실행하지 않고 각 프로세스 안에서
-일반 C++ 함수로 호출되므로 토픽 전송이나 직렬화 비용이 생기지 않는다.
+`vision`은 카메라·TensorRT·ROS 전송만 담당하고, perception과 mission FSM은
+ROS 비의존 `vision_core`의 `MissionController`가 단일하게 결정한다.
 
-## 담당 범위
+## 출력
 
-- IMU roll/pitch 기반 픽셀 좌표 보정
-- 보정된 점 좌표의 8차원 특징 계산
-- 일반 점선 추종 속도 계산
-- 최근 점선 방향과 경로상 위치를 이용한 점선 누락 복구
-- 공·골대·백보드·허들 class별 target 선택
-- Line/Ball/Hurdle/Goal 미션 전이와 활성 controller 잠금
-- 속도·미션 액션·카메라 요청을 하나의 `ControlCommand`로 취합
-- 선택적으로 연속 속도를 P2P 고정 보행 액션으로 양자화
+- 보행과 특수 동작은 `/jandi_vision/action_cmd`의 기존 action ID를 사용한다.
+- `CONTACT_WALK=20`은 protocol에만 예약되어 있다. 현재 HURDLE contact는
+  executor mapping이 준비될 때까지 `STEP_FORWARD_ONE=10`을 사용한다.
+- TURN action의 `target_yaw_deg`는 양수 크기이며 방향은 action ID가 나타낸다.
+- SHOOT의 `target_yaw_deg`만 좌회전 양수·우회전 음수인 signed degree다.
+- ACK/READY/DONE과 `action_id`, LINE one-action READY queue 계약은 유지한다.
 
-YOLO/TensorRT 추론, ROS2 토픽 구독·발행, 화면 표시는 담당하지 않는다.
+## LINE
 
-## 실제 비전 노드
+정상 LINE은 near fit의 offset/heading score만으로
+`STEP_FORWARD_LEFT/FIVE/RIGHT`를 직접 고른다. curvature는 별도 validity와
+분모로 집계되는 진단값이며 조향이나 미션 전환에 사용하지 않는다.
 
-`line_perception_node`는 `shared_vision_core`를 직접 호출한다. YOLO detection을
-점선 중심점과 공통 Detection 자료형으로 바꾸는 변환만 `vision`에 남는다.
-`line_detection_adapter`는 라인 bbox를 C++ 중심점 목록으로 바꾸며,
-공·골대·백보드·허들은 노드의 `ToCoreDetections()`가 모든 bbox를 한꺼번에
-공통 자료형으로 바꿔 코어에 전달한다.
-기존 좌표·특징·점선 속도·객체 target·공 속도 래퍼는 `legacy`에 보관한다.
+첫 판단 실패는 2초 정지 관측한다. 유효 O/H 표본이 5개 이상이면 평균으로
+복귀한다. 부족하면 안정된 과거 방향 기억이 있을 때 같은 방향으로 15도
+회전한 뒤 다시 2초 관측하며 최대 5회 반복한다. 방향 기억이 없으면 회전 없이
+2초 관측을 최대 5회 추가한다. 한도를 넘으면 Reset 전까지 FINAL HOLD다.
 
-보행 출력은 ROS 파라미터 `locomotion_backend`로 선택한다.
+긴 LINE action 동안 후반 50% 표본을 끝으로 갈수록 1→3 가중 집계하며,
+READY 예약 action도 최초 action과 같은 direct selector로 결정한다.
 
-```text
-velocity         : 호환 시험용으로 /jandi_vision/cmd_vel에 연속속도 발행
-p2p (기본값)    : /cmd_vel 발행 없이 /jandi_vision/action_cmd로 고정 보행 발행
-```
+## 객체 미션
 
-P2P에서도 공 집기·허들 넘기·슛 등 미션 액션과 같은 `action_cmd/status`
-ACK/DONE 계약을 사용한다. 보행 DONE은 다음 보행 블록 선택에만 쓰고 미션
-controller의 동작 완료로 전달하지 않는다.
+- BALL: 원거리 3-way direct cruise, 카메라 DOWN 후 lateral 우선 fine 보행,
+  거리 보정 뒤 PICK_BALL, 성공 시 한 번 후진하고 LINE을 재획득한다.
+- HURDLE: 원거리 `STEP_FORWARD_FIVE`, raw v 0.75의 10-window/7-hit close
+  trigger, 현재 action DONE 후 카메라 DOWN → action 10 → HUDDLE(16).
+- GOAL: 백보드 RGB-D로 림 중심 geometry를 매 fine step 뒤 다시 계산한다.
+  거리 보정을 먼저 하고, shoot yaw가 ±30도 안이면 signed SHOOT, 아니면
+  좌우 side step 후 재관측한다.
 
-core의 한 `ControlCommand`에는 최종 P2P action과 양자화 전
-`pre_p2p_motion`이 함께 들어 있다. ROS는 기존 action 메시지만 실행하고,
-MuJoCo 어댑터는 velocity-compatible action에서 PRE-P2P 속도를 RL 보행기에
-줄 수 있다. 어느 쪽도 미션 상태를 직접 바꾸지 않으며 같은 `action_id`의
-ACK/DONE만 MissionController에 반환한다.
+카메라 trigger는 실행 중 보행을 취소하지 않는다. trigger만 latch하고 보행
+DONE 뒤 camera command를 발행하며, camera settled 전에는 새 보행을 만들지 않는다.
 
-```bash
-ros2 run vision line_perception_node --ros-args \
-  -p locomotion_backend:=p2p
-```
-
-실제 노드는 아직 경기장 경로와 로봇 위치를 받지 않으므로, 경로 정보가 필요한
-위치 기반 복구는 사용하지 않고 누적된 점선 좌우 방향을 이용한다. 이후 odometry와
-경로 입력을 연결하면 같은 코어의 위치 기반 복구를 그대로 사용할 수 있다.
-
-## G1
-
-G1은 `ctypes` 연결층으로 독립 코어의 동일한 공유 라이브러리를 호출한다. 기본값은 기존처럼
-카메라 흔들림이 포함된 픽셀을 그대로 사용한다. `use_rp_stabilization=True`로
-설정하면 실제 비전 노드와 같은 IMU 좌표 보정을 거친다.
-
-G1과 실제 비전을 실행하기 전에 독립 코어를 먼저 빌드하고 설치해야 한다.
-
-```bash
-cd /home/noh/vision_core
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/home/noh/vision_core/install
-cmake --build build -j
-cmake --install build
-
-cd /home/noh/my_cv
-source /opt/ros/humble/setup.bash
-colcon build --packages-select vision --allow-overriding vision
-source install/setup.bash
-```
-
-공유 라이브러리를 다른 위치에 설치했다면 다음 환경변수로 지정한다.
-
-```bash
-export G1_VISION_CORE_LIB=/절대/경로/libshared_vision_core.so
-```
-
-## 수정 원칙
-
-전체 구조와 변경 범위별 빌드 방법은 `/home/noh/vision_core/README.md`를
-기준으로 한다.
-
-좌표 보정식은 `coordinate_rectifier.cpp`, 특징 정의는
-`line_feature_extractor.cpp`, 규칙제어와 복구 계산은
-`line_velocity_controller.cpp`, 공 접근은 `ball_controller.cpp`, 미션 잠금은
-`mission_controller.cpp`, 최종 명령 생명주기는 `control_command.cpp`, P2P 보행
-선택은 `p2p_motion_quantizer.cpp`에서 수정한다. ROS 메시지 변환은 기존 `vision`
-클래스에서, Python 자료형 변환은 G1의 `core_bridge.py`에서만 처리한다.
-
-이전에 중심점 추출과 특징 계산을 따로 담당하던 사용 중단 인터페이스는
-`src/vision/legacy`에 보관하며 현재 빌드와 설치에는 포함하지 않는다.
+공통 수치 기본값은 `vision_core/config/vision_algorithm.yaml` 하나만 사용한다.
+ROS 어댑터 설정은 `config/vision_params.yaml`에 둔다.

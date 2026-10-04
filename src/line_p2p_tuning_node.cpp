@@ -108,30 +108,11 @@ public:
     declare_parameter<bool>("use_imu_rectification", false);
     declare_parameter<bool>("assume_zero_imu", false);
     declare_parameter<double>("imu_abs_limit_deg", 45.0);
-    declare_parameter<double>("inference_hz",
-                              1.0 / std::max(config.line_observation_dt, 1e-6));
+    declare_parameter<double>("inference_hz", 15.0);
     declare_parameter<bool>("show_debug_view", true);
     declare_parameter<double>("line_tuning_observation_sec", 1.5);
 
     declare_parameter<int>("max_centers", config.line_features.max_centers);
-    declare_parameter<double>("lookahead_delta_v_px",
-                              config.line_features.lookahead_delta_v_px);
-    declare_parameter<double>("lookahead_alpha_normal",
-                              config.line_features.lookahead_alpha_normal);
-    declare_parameter<double>("recover_enter_nvis",
-                              config.line_features.recover_enter_nvis);
-    declare_parameter<double>("recover_exit_nvis",
-                              config.line_features.recover_exit_nvis);
-    declare_parameter<double>("recover_enter_u",
-                              config.line_features.recover_enter_u);
-    declare_parameter<double>("recover_exit_u",
-                              config.line_features.recover_exit_u);
-    declare_parameter<double>("cmd_vx_min", config.line.cmd_vx_min);
-    declare_parameter<double>("cmd_vx_max", config.line.cmd_vx_max);
-    declare_parameter<double>("cmd_wz_min", config.line.cmd_wz_min);
-    declare_parameter<double>("cmd_wz_max", config.line.cmd_wz_max);
-    declare_parameter<double>("rule_v_base", config.line.v_base);
-
     declare_parameter<double>("line_p2p_offset_gain",
                               config.line_p2p.offset_gain);
     declare_parameter<double>("line_p2p_heading_gain",
@@ -155,7 +136,7 @@ public:
     inference_hz_ = get_parameter("inference_hz").as_double();
     show_debug_view_ = get_parameter("show_debug_view").as_bool();
     observation_sec_ = get_parameter("line_tuning_observation_sec").as_double();
-    hold_sec_ = config.line_p2p.no_action_hold_sec;
+    hold_sec_ = config.line_p2p.failure_observation_sec;
 
     if (engine_path.empty()) {
       throw std::runtime_error("engine_path is empty");
@@ -165,37 +146,17 @@ public:
     }
     if (!std::isfinite(hold_sec_) || hold_sec_ < 0.0) {
       throw std::invalid_argument(
-          "line_p2p.no_action_hold_sec must be finite and >= 0");
+          "line_p2p.failure_observation_sec must be finite and >= 0");
     }
 
     config.enable_ball = false;
     config.enable_hurdle = false;
     config.enable_goal = false;
     config.initial_has_ball = false;
-    config.command.locomotion_backend =
-        vision_core::LocomotionBackend::kP2pAction;
     config.line_detection.class_id = line_class_id_;
     config.line_detection.confidence = conf_thres_;
-    config.line_observation_dt = 1.0 / std::max(inference_hz_, 1e-6);
     config.line_features.max_centers = get_parameter("max_centers").as_int();
     config.line_features.image_center_u = get_parameter("cx").as_double();
-    config.line_features.lookahead_delta_v_px =
-        get_parameter("lookahead_delta_v_px").as_double();
-    config.line_features.lookahead_alpha_normal =
-        get_parameter("lookahead_alpha_normal").as_double();
-    config.line_features.recover_enter_nvis =
-        get_parameter("recover_enter_nvis").as_double();
-    config.line_features.recover_exit_nvis =
-        get_parameter("recover_exit_nvis").as_double();
-    config.line_features.recover_enter_u =
-        get_parameter("recover_enter_u").as_double();
-    config.line_features.recover_exit_u =
-        get_parameter("recover_exit_u").as_double();
-    config.line.cmd_vx_min = get_parameter("cmd_vx_min").as_double();
-    config.line.cmd_vx_max = get_parameter("cmd_vx_max").as_double();
-    config.line.cmd_wz_min = get_parameter("cmd_wz_min").as_double();
-    config.line.cmd_wz_max = get_parameter("cmd_wz_max").as_double();
-    config.line.v_base = get_parameter("rule_v_base").as_double();
 
     config.line_p2p.offset_gain =
         get_parameter("line_p2p_offset_gain").as_double();
@@ -295,6 +256,7 @@ private:
     case MissionAction::kStepForwardRight: return "STEP_FORWARD_RIGHT";
     case MissionAction::kTurnLeftAndStep: return "TURN_LEFT_AND_STEP";
     case MissionAction::kTurnRightAndStep: return "TURN_RIGHT_AND_STEP";
+    case MissionAction::kContactWalk: return "CONTACT_WALK_RESERVED";
     default: return "NONE";
     }
   }
@@ -390,7 +352,6 @@ private:
     state_ = State::kObserving;
     action_id_ = 0;
     last_action_ = vision_core::MissionAction::kNone;
-    last_motion_ = {};
     response->success = true;
     response->message = "collecting for " + std::to_string(observation_sec_) +
                         " sec";
@@ -455,7 +416,7 @@ private:
   void PrepareInput(double now_sec,
                     vision_core::PerceptionFrameInput &input) {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    input.allow_new_line_locomotion_action = false;
+    input.allow_new_line_action = false;
     if (state_ == State::kHolding) {
       if (now_sec + 1e-9 >= hold_until_sec_) {
         state_ = State::kIdle;
@@ -479,7 +440,7 @@ private:
     }
     last_guide_ = *guide;
     input.line_decision_guide_override = *guide;
-    input.allow_new_line_locomotion_action = true;
+    input.allow_new_line_action = true;
     state_ = State::kDeciding;
   }
 
@@ -499,7 +460,6 @@ private:
           result.mission.command.action_id != 0) {
         action_id_ = result.mission.command.action_id;
         last_action_ = result.mission.command.action;
-        last_motion_ = result.mission.command.pre_p2p_motion;
         state_ = State::kWaitingDone;
         vision_core::CommandDeliveryFeedback simulated_done;
         simulated_done.action_id = action_id_;
@@ -510,12 +470,11 @@ private:
           feedback_queue_.push_front(simulated_done);
         }
         RCLCPP_INFO(get_logger(),
-                    "Trial action: id=%lu action=%u(%s) vx=%+.3f wz=%+.3f "
+                    "Trial action: id=%lu action=%u(%s) "
                     "(internal DONE queued)",
                     static_cast<unsigned long>(action_id_),
                     static_cast<unsigned>(last_action_),
-                    ActionName(last_action_), last_motion_.vx,
-                    last_motion_.wz);
+                    ActionName(last_action_));
       } else {
         state_ = State::kHolding;
         hold_until_sec_ = now_sec + hold_sec_;
@@ -541,9 +500,7 @@ private:
     message.mission =
         static_cast<std::uint8_t>(vision_core::MissionType::kLine);
     message.action = static_cast<std::uint16_t>(command.action);
-    const double degrees = command.action_yaw_rad * 180.0 / M_PI;
-    message.target_yaw_deg = static_cast<std::int16_t>(
-        std::lround(std::clamp(degrees, -180.0, 180.0)));
+    message.target_yaw_deg = command.target_yaw_deg;
     action_pub_->publish(message);
   }
 
@@ -619,15 +576,11 @@ private:
     vision_core::LineGuide guide = result.mission.line_features.guide;
     vision_core::LineP2pConfig gains;
     vision_core::MissionAction action;
-    vision_core::MotionCommand motion;
     {
       std::lock_guard<std::mutex> lock(state_mutex_);
       state = state_;
       gains = line_p2p_config_;
       action = last_action_;
-      motion = state == State::kWaitingDone
-                   ? last_motion_
-                   : result.mission.line_command;
       if ((state == State::kDeciding || state == State::kWaitingDone) &&
           last_guide_.valid) {
         guide = last_guide_;
@@ -655,9 +608,6 @@ private:
     std::snprintf(text, sizeof(text), "SCORE=%+.3f BAND=+/-%.3f",
                   score, gains.steering_deadband);
     draw(cv::Scalar(255, 255, 0));
-    std::snprintf(text, sizeof(text), "PRE-P2P vx=%+.3f wz=%+.3f",
-                  motion.vx, motion.wz);
-    draw(cv::Scalar(0, 200, 255));
     std::snprintf(text, sizeof(text), "ACTION: %u %s",
                   static_cast<unsigned>(action), ActionName(action));
     draw(cv::Scalar(0, 200, 255));
@@ -704,7 +654,6 @@ private:
   vision_core::LineGuideAccumulator accumulator_;
   vision_core::LineGuide last_guide_{};
   vision_core::MissionAction last_action_{vision_core::MissionAction::kNone};
-  vision_core::MotionCommand last_motion_{};
 
   int line_class_id_{0};
   double conf_thres_{0.6};
