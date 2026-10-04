@@ -12,6 +12,12 @@ ROS 비의존 `vision_core`의 `MissionController`가 단일하게 결정한다.
 - SHOOT의 `target_yaw_deg`만 좌회전 양수·우회전 음수인 signed degree다.
 - ACK/READY/DONE과 `action_id`, LINE one-action READY queue 계약은 유지한다.
 
+현재 action의 ACK는 executor가 action 실행을 수락하고 시작했음을 뜻한다.
+READY는 current action의 취소나 종료가 아니다. READY 뒤 발행되는 next LINE
+action의 ACK는 executor가 그 ID와 payload를 내부 one-action queue에 실제로
+저장했다는 뜻이며, current DONE 직후 정확히 한 번 실행해야 한다. 저장하지
+못한 command에는 ACK하면 안 되고, 같은 ID의 재수신은 중복 실행하지 않는다.
+
 ## LINE
 
 정상 LINE은 near fit의 offset/heading score만으로

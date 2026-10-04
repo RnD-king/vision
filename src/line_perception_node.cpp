@@ -422,8 +422,8 @@ public:
 
     // ---- heartbeat(1Hz) ----
     hb_timer_ = create_wall_timer(std::chrono::seconds(1), [this]() {
-      RCLCPP_INFO(get_logger(), "[HB] frames=%zu imu=%zu pub=%zu (last_img_stamp=%.9f)", frames_count_, imu_count_,
-                  pub_count_, last_img_stamp_sec_);
+      RCLCPP_INFO(get_logger(), "[HB] frames=%zu imu=%zu action_pub=%zu (last_img_stamp=%.9f)", frames_count_, imu_count_,
+                  action_pub_count_, last_img_stamp_sec_);
     });
 
     if (inference_hz_ > 0.0) {
@@ -654,9 +654,6 @@ private:
         const SimulatedActionState completed = current;
         QueueSimulatedActionFeedback(completed.id, true, false, true);
         RememberCompletedSimulatedAction(completed);
-        if (completed.category == vision_core::ActionCategory::kMission) {
-          mission_action_active_ = false;
-        }
         if (simulated_queued_action_.id != 0) {
           simulated_current_action_ = simulated_queued_action_;
           simulated_current_action_.start_sec = now_sec;
@@ -710,9 +707,6 @@ private:
     } else if (msg->status == vision::msg::CommandStatus::DONE) {
       feedback.acknowledged = true;
       feedback.done = true;
-      if (last_action_category_ == vision_core::ActionCategory::kMission) {
-        mission_action_active_ = false;
-      }
     } else {
       return;
     }
@@ -756,8 +750,7 @@ private:
     message.action = static_cast<std::uint16_t>(command.action);
     message.target_yaw_deg = command.target_yaw_deg;
     action_cmd_pub_->publish(message);
-    last_action_id_ = command.action_id;
-    last_action_category_ = command.action_category;
+    ++action_pub_count_;
     if (simulate_decision_) {
       if (simulated_current_action_.id == command.action_id) {
         // 같은 ID 재전송은 동작 시작 시각을 건드리지 않고 ACK만 재응답한다.
@@ -790,9 +783,6 @@ private:
           QueueSimulatedActionFeedback(next.id, true, false, false);
         }
       }
-    }
-    if (command.action_category == vision_core::ActionCategory::kMission) {
-      mission_action_active_ = true;
     }
   }
 
@@ -1477,15 +1467,11 @@ private:
   vision_core::CommandDeliveryFeedback action_delivery_feedback_{};
   std::mutex action_feedback_mutex_;
   std::deque<vision_core::CommandDeliveryFeedback> action_feedback_queue_;
-  std::uint64_t last_action_id_{0};
   SimulatedActionState simulated_current_action_;
   SimulatedActionState simulated_queued_action_;
   std::deque<SimulatedActionState> simulated_completed_actions_;
   std::deque<vision_core::CommandDeliveryFeedback>
       simulated_action_feedback_queue_;
-  vision_core::ActionCategory last_action_category_{
-      vision_core::ActionCategory::kNone};
-  bool mission_action_active_{false};
   vision_core::CameraFeedback camera_feedback_{};
   std::uint64_t next_camera_id_{1};
   std::uint64_t pending_camera_id_{0};
@@ -1498,7 +1484,7 @@ private:
   // 디버그 카운터
   size_t frames_count_{0};
   size_t imu_count_{0};
-  size_t pub_count_{0};
+  size_t action_pub_count_{0};
   double last_img_stamp_sec_{0.0};
 
   // ---- PERF 오버레이(1초 갱신) ----

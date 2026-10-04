@@ -461,17 +461,9 @@ private:
         action_id_ = result.mission.command.action_id;
         last_action_ = result.mission.command.action;
         state_ = State::kWaitingDone;
-        vision_core::CommandDeliveryFeedback simulated_done;
-        simulated_done.action_id = action_id_;
-        simulated_done.acknowledged = true;
-        simulated_done.done = true;
-        {
-          std::lock_guard<std::mutex> feedback_lock(feedback_mutex_);
-          feedback_queue_.push_front(simulated_done);
-        }
         RCLCPP_INFO(get_logger(),
-                    "Trial action: id=%lu action=%u(%s) "
-                    "(internal DONE queued)",
+                    "Trial action: id=%lu action=%u(%s); waiting for executor "
+                    "ACK/DONE",
                     static_cast<unsigned long>(action_id_),
                     static_cast<unsigned>(last_action_),
                     ActionName(last_action_));

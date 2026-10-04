@@ -2,136 +2,67 @@
 
 ## Project role
 
-`vision` is the hardware/runtime adapter layer for the shared vision system.
-
-Its responsibilities include:
-
-- ROS2 subscriptions and publications
-- camera and IMU input
-- CUDA image preprocessing
-- TensorRT YOLO inference
-- conversion from detector outputs to shared-core types
-- ROS command transport
-- runtime/device-specific configuration
-- visualization and diagnostics
-
-Reusable perception, mission, and control algorithms belong in `vision_core`.
+`vision` is the hardware/runtime adapter for the shared P2P vision system. It
+owns ROS2 topics, camera/IMU/depth input, CUDA preprocessing, TensorRT inference,
+conversion to shared-core types, visualization, diagnostics, and command
+transport. Reusable perception and mission behavior belongs in `vision_core`.
 
 ## Architecture boundary
 
-Do not duplicate `vision_core` algorithms in this repository.
+The active pipeline is:
 
-In particular, avoid implementing mission logic, target-selection policy, line-control equations, mission state transitions, or action-lifecycle policy directly in `line_perception_node.cpp`.
+camera / IMU / RGB-D → preprocessing and TensorRT → observation adapters →
+`vision_core::MissionController` → direct `ControlCommand` → ROS messages →
+P2P executor
 
-The intended pipeline is:
-
-camera / IMU
-→ preprocessing
-→ TensorRT YOLO
-→ detection adapters
-→ `vision_core::MissionController`
-→ `ControlCommand`
-→ ROS2 messages
-
-`line_perception_node` is primarily an orchestration and transport layer.
-
-## vision_core dependency
-
-The active implementation depends on the separately installed `shared_vision_core`.
-
-Do not copy shared-core source code into this repository as a workaround.
-
-When behavior belongs in both the real robot and simulator, implement it in `vision_core` first and keep only the adapter here.
-
-## Active source vs legacy
-
-`legacy/` is reference-only.
-
-It is not part of the active build.
-
-Do not modify or revive legacy code unless the user explicitly asks for it.
-
-Do not use legacy code as the authoritative implementation when an equivalent implementation exists in `vision_core`.
+Do not reintroduce `MotionCommand`, velocity control, `P2pMotionQuantizer`,
+`/cmd_vel`, RL/MuJoCo compatibility, or a duplicated mission FSM. The ROS node
+must not independently select mission priority, force transitions, reset
+individual controllers, or emulate completion in the real-executor path.
 
 ## Configuration ownership
 
-Shared algorithm parameters belong in:
+Shared algorithm parameters come only from
+`vision_core/config/vision_algorithm.yaml`. ROS/runtime wiring belongs in
+`vision/config/vision_params.yaml`, and TensorRT/model selection belongs in
+`vision/config/yolo26_runtime.yaml`. Do not duplicate canonical algorithm
+defaults in this repository.
 
-`vision_core/config/vision_algorithm.yaml`
+## ROS execution contract
 
-ROS/runtime-specific parameters belong in:
+`ActionCommand.msg`, `CameraCommand.msg`, and `CommandStatus.msg` are external
+interfaces. Preserve action numbers, `action_id`, and ACK/READY/DONE semantics.
 
-`vision/config/vision_params.yaml`
+For a current action, ACK means the executor accepted and started it. READY does
+not cancel or finish it. After READY, vision may publish one queued LINE action
+with a new ID. The executor must ACK that ID only after storing the complete
+command, then execute it exactly once after current DONE. Repeated messages with
+the same ID must be idempotent.
 
-YOLO/TensorRT runtime/model-selection parameters belong in:
+Camera triggers latch while locomotion runs. Publish camera commands only after
+locomotion DONE and keep locomotion on HOLD until camera settled feedback.
 
-`vision/config/yolo26_runtime.yaml`
+Internal action feedback is allowed only in an explicit simulation path. Real
+robot and tuning paths must wait for the executor's actual ACK/DONE.
 
-Do not duplicate the same algorithm constant across multiple layers without a clear compatibility reason.
+## Hardware safety and verification
 
-## ROS interface compatibility
+Do not autonomously launch camera or robot-motion execution without explicit
+user authorization. Builds and static checks are safe.
 
-The following messages form an external execution contract:
+Typical verification:
 
-- `ActionCommand.msg`
-- `CameraCommand.msg`
-- `CommandStatus.msg`
+```bash
+source /opt/ros/humble/setup.bash
+cd /home/noh/my_cv
+CMAKE_PREFIX_PATH=/home/noh/vision_core/install${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH} \
+  colcon build --packages-select vision --symlink-install --cmake-clean-cache
+```
 
-Do not change message fields, action IDs, ACK/DONE semantics, or command lifecycle behavior casually.
-
-Before changing an interface, inspect all producers and consumers.
-
-Mission actions and locomotion/P2P actions must retain their established action-ID lifecycle semantics.
-
-## Mission ownership
-
-`MissionController` in `vision_core` is the single mission-level decision entry point.
-
-The ROS node should not independently:
-
-- select mission priority
-- reset individual mission controllers
-- force mission transitions
-- emulate controller completion state
-
-It should provide observations/feedback and transport the returned command.
-
-## TensorRT / CUDA
-
-TensorRT engine files and generated model artifacts are not source files and should not be committed.
-
-Keep PC and Jetson differences in runtime/build configuration rather than duplicating algorithm logic.
-
-Do not assume a CUDA architecture or TensorRT installation outside the existing build/config contract without checking the target machine.
-
-## Hardware execution
-
-Do not autonomously launch the camera, robot command topics, or physical-motion execution unless explicitly requested.
-
-Builds and static checks are safe; robot-moving runtime commands are not.
-
-## Build verification
-
-Typical workspace build:
-
-`source /opt/ros/humble/setup.bash`
-
-`cd /home/noh/my_cv`
-
-`colcon build --packages-select vision --symlink-install`
-
-Before claiming a modification is valid, at minimum ensure the affected target builds.
-
-If a change depends on `vision_core`, verify that the correct installed `vision_core` version is being used.
+When a change depends on `vision_core`, build, test, and install the core first
+so the adapter uses the current headers and library.
 
 ## Scope discipline
 
-For targeted fixes:
-
-1. inspect the relevant node/adapter/config,
-2. inspect the corresponding `vision_core` API,
-3. determine which repository owns the behavior,
-4. modify only the owning layer,
-5. verify the build.
-
-Avoid unrelated cleanup or refactoring unless requested.
+Inspect the adapter, corresponding core API, and external message consumers;
+modify only the owning layer; and avoid unrelated refactors.
