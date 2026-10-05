@@ -27,9 +27,11 @@ line_perception_node:
     enable_hurdle_controller: true
     enable_goal_controller: true
     algorithm_mode: "all"
+    # 카메라 command와 별개로 endpoint 도달 feedback만 내부 모사한다.
     simulate_camera_feedback: false
+    # 실제 ActionCommand를 publish하지 않고 내부 ACK/READY/DONE lifecycle만
+    # 실행하는 action-executor test mode다.
     simulate_decision: false
-    # 알고리즘 단독 시험에서 action executor의 ACK/READY/DONE을 모사한다.
     # ACK는 다음 camera frame, READY는 긴 보행 종료 직전에 반환한다.
     simulate_action_duration_sec: 0.50
     simulate_step_forward_five_duration_sec: 3.0

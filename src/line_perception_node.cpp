@@ -744,17 +744,7 @@ private:
   }
 
   void PublishActionCommand(const vision_core::ControlCommand &command) {
-    if (!enable_command_transport_ ||
-        command.command_type != vision_core::CommandType::kAction) {
-      return;
-    }
-    vision::msg::ActionCommand message;
-    message.action_id = command.action_id;
-    message.mission = static_cast<std::uint8_t>(command.mission);
-    message.action = static_cast<std::uint16_t>(command.action);
-    message.target_yaw_deg = command.target_yaw_deg;
-    action_cmd_pub_->publish(message);
-    ++action_pub_count_;
+    if (command.command_type != vision_core::CommandType::kAction) return;
     if (simulate_decision_) {
       if (simulated_current_action_.id == command.action_id) {
         // 같은 ID 재전송은 동작 시작 시각을 건드리지 않고 ACK만 재응답한다.
@@ -787,7 +777,17 @@ private:
           QueueSimulatedActionFeedback(next.id, true, false, false);
         }
       }
+      return;
     }
+    if (!enable_command_transport_) return;
+
+    vision::msg::ActionCommand message;
+    message.action_id = command.action_id;
+    message.mission = static_cast<std::uint8_t>(command.mission);
+    message.action = static_cast<std::uint16_t>(command.action);
+    message.target_yaw_deg = command.target_yaw_deg;
+    action_cmd_pub_->publish(message);
+    ++action_pub_count_;
   }
 
   void PublishCameraCommand(vision_core::CameraRequest request) {
@@ -1121,7 +1121,8 @@ private:
     perception_input.image_height = bgr.rows;
     perception_input.now_sec = frame_now_sec;
     perception_input.camera_feedback = camera_feedback_;
-    perception_input.command_transport_enabled = enable_command_transport_;
+    perception_input.command_transport_enabled =
+        enable_command_transport_ || simulate_decision_;
     perception_input.delivery_feedback = action_delivery_feedback_;
     const auto t4 = std::chrono::steady_clock::now();
     const auto dt_pts_us = std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3).count();
