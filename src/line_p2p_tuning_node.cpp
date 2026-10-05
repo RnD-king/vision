@@ -409,6 +409,7 @@ private:
                     vision_core::PerceptionFrameInput &input) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     input.allow_new_line_action = false;
+    input.advance_line_fsm = false;
     if (state_ == State::kIdle) return false;
     if (state_ == State::kHolding) {
       if (now_sec + 1e-9 >= hold_until_sec_) {
@@ -417,7 +418,7 @@ private:
         RCLCPP_INFO(get_logger(), "Pose hold finished; trigger unlocked");
         return false;
       }
-      return true;
+      return false;
     }
     if (state_ != State::kObserving ||
         now_sec - start_sec_ < observation_sec_) {
@@ -430,11 +431,12 @@ private:
       RCLCPP_WARN(get_logger(),
                   "No valid LineGuide; holding current pose for %.2f sec",
                   hold_sec_);
-      return true;
+      return false;
     }
     last_guide_ = *guide;
     input.line_decision_guide_override = *guide;
     input.allow_new_line_action = true;
+    input.advance_line_fsm = true;
     state_ = State::kDeciding;
     return true;
   }

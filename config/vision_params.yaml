@@ -16,12 +16,12 @@ line_perception_node:
     fy: 600.0
     cx: 320.0
     cy: 240.0
-    use_imu_rectification: true
+    use_imu_rectification: false
     assume_zero_imu: false
     imu_abs_limit_deg: 45.0
     max_depth_age_sec: 0.20
 
-    show_debug_view: true
+    show_debug_view: false
     show_yolo_debug_view: false
     enable_ball_controller: true
     enable_hurdle_controller: true

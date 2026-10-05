@@ -153,11 +153,11 @@ public:
     declare_parameter<double>("fy", 600.0);                      // camera intrinsic fy
     declare_parameter<double>("cx", 320.0);                      // camera intrinsic cx
     declare_parameter<double>("cy", 240.0);                      // camera intrinsic cy
-    declare_parameter<bool>("use_imu_rectification", true);      // IMU 기반 픽셀 보정 사용 여부
+    declare_parameter<bool>("use_imu_rectification", false);     // IMU 기반 픽셀 보정 사용 여부
     declare_parameter<bool>("assume_zero_imu", false);           // roll/pitch를 0으로 가정
     declare_parameter<double>("imu_abs_limit_deg", 45.0);        // IMU roll/pitch clamp 각도
     // core가 확정한 객체만 표시하는 기본 디버그 화면/상태 패널이다.
-    declare_parameter<bool>("show_debug_view", true);
+    declare_parameter<bool>("show_debug_view", false);
     // YOLO의 필터 전 raw detection bbox를 별도 창에서 확인할 때만 켠다.
     declare_parameter<bool>("show_yolo_debug_view", false);
     declare_parameter<double>("inference_hz", 15.0);
@@ -189,7 +189,7 @@ public:
     declare_parameter<double>("goal_hoop_radius_m", algorithm_defaults.goal.hoop_radius_m);
     declare_parameter<double>("goal_throwing_range_m", algorithm_defaults.goal.throwing_range_m);
     declare_parameter<double>("goal_position_tolerance_m", algorithm_defaults.goal.position_tolerance_m);
-    declare_parameter<double>("camera_motion_timeout_sec", algorithm_defaults.ball.camera_motion_timeout_sec);
+    declare_parameter<double>("camera_motion_timeout_sec", algorithm_defaults.camera_motion_timeout_sec);
 
     image_topic_ = get_parameter("image_topic").as_string();
     depth_topic_ = get_parameter("depth_topic").as_string();
@@ -242,7 +242,6 @@ public:
       throw std::invalid_argument("algorithm_mode must be one of: all, line, ball, hurdle, goal");
     }
     vision_core::BallConfig ball_cmd_cfg = algorithm_defaults.ball;
-    ball_cmd_cfg.camera_motion_timeout_sec = get_parameter("camera_motion_timeout_sec").as_double();
 
     const double fx = get_parameter("fx").as_double();
     const double fy = get_parameter("fy").as_double();
@@ -258,11 +257,7 @@ public:
     }
 
     vision_core::HurdleConfig hurdle_cmd_cfg = algorithm_defaults.hurdle;
-    hurdle_cmd_cfg.camera_motion_timeout_sec =
-        get_parameter("camera_motion_timeout_sec").as_double();
     vision_core::GoalConfig goal_cmd_cfg = algorithm_defaults.goal;
-    goal_cmd_cfg.camera_motion_timeout_sec =
-        get_parameter("camera_motion_timeout_sec").as_double();
     goal_cmd_cfg.fine_adjust_start_z_m =
         get_parameter("goal_fine_adjust_start_z_m").as_double();
     goal_cmd_cfg.hoop_radius_m =
@@ -272,6 +267,8 @@ public:
     goal_cmd_cfg.position_tolerance_m =
         get_parameter("goal_position_tolerance_m").as_double();
     vision_core::MissionControllerConfig mission_config = algorithm_defaults;
+    mission_config.camera_motion_timeout_sec =
+        get_parameter("camera_motion_timeout_sec").as_double();
     mission_config.line_features = line_feature_cfg;
     mission_config.line = algorithm_defaults.line;
     mission_config.ball = ball_cmd_cfg;
