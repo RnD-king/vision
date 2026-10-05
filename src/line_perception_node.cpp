@@ -399,7 +399,13 @@ public:
     }
 
     RCLCPP_INFO(get_logger(), "[SETUP] image subscription created (SensorDataQoS)");
-    RCLCPP_INFO(get_logger(), "[SETUP] imu subscription created");
+    if (!use_imu_rectification_) {
+      RCLCPP_INFO(get_logger(), "[SETUP] IMU rectification disabled; no IMU subscription");
+    } else if (assume_zero_imu_) {
+      RCLCPP_INFO(get_logger(), "[SETUP] zero IMU assumption; no IMU subscription");
+    } else if (imu_sub_) {
+      RCLCPP_INFO(get_logger(), "[SETUP] imu subscription created");
+    }
 
     if (show_debug_view_ || show_yolo_debug_view_) {
       try {
