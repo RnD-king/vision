@@ -405,21 +405,23 @@ private:
     return result;
   }
 
-  void PrepareInput(double now_sec,
+  bool PrepareInput(double now_sec,
                     vision_core::PerceptionFrameInput &input) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     input.allow_new_line_action = false;
+    if (state_ == State::kIdle) return false;
     if (state_ == State::kHolding) {
       if (now_sec + 1e-9 >= hold_until_sec_) {
         state_ = State::kIdle;
         hold_until_sec_ = 0.0;
         RCLCPP_INFO(get_logger(), "Pose hold finished; trigger unlocked");
+        return false;
       }
-      return;
+      return true;
     }
     if (state_ != State::kObserving ||
         now_sec - start_sec_ < observation_sec_) {
-      return;
+      return true;
     }
     const auto guide = accumulator_.FinishAll(trial_id_);
     if (!guide) {
@@ -428,12 +430,13 @@ private:
       RCLCPP_WARN(get_logger(),
                   "No valid LineGuide; holding current pose for %.2f sec",
                   hold_sec_);
-      return;
+      return true;
     }
     last_guide_ = *guide;
     input.line_decision_guide_override = *guide;
     input.allow_new_line_action = true;
     state_ = State::kDeciding;
+    return true;
   }
 
   void FinishStep(
@@ -532,15 +535,17 @@ private:
     input.now_sec = now_sec;
     input.command_transport_enabled = true;
     input.delivery_feedback = feedback;
-    PrepareInput(now_sec, input);
+    const bool step_controller = PrepareInput(now_sec, input);
 
     vision_core::PerceptionMissionFrameResult result;
-    {
-      std::lock_guard<std::mutex> lock(controller_mutex_);
-      result = controller_->StepPerception(input);
+    if (step_controller) {
+      {
+        std::lock_guard<std::mutex> lock(controller_mutex_);
+        result = controller_->StepPerception(input);
+      }
+      FinishStep(now_sec, feedback, result);
+      PublishAction(result.mission.command);
     }
-    FinishStep(now_sec, feedback, result);
-    PublishAction(result.mission.command);
 
     if (show_debug_view_) DrawDebug(image->image, detections, result);
   }
