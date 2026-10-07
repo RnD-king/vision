@@ -1,7 +1,7 @@
 yolo26_runtime:
   ros__parameters:
-    pc_engine_path: /home/noh/dataset/runs/yolo26n_0714/weights/best.engine
+    pc_engine_path: /home/noh/dataset/runs/yolo26n_goal_nomosaic-4/weights/best.engine
     pc_ultralytics_model_path: /home/noh/dataset/runs/yolo26n_goal_nomosaic-4/weights/best.pt
 
-    jetson_engine_path: /home/rnd/models/vision/best.engine
-    jetson_ultralytics_model_path: /home/rnd/yolo26_verify/competition_0511/yolo26_line_best.pt
+    jetson_engine_path: /home/rnd/jandi/src/dataset/best.engine
+    jetson_ultralytics_model_path: /home/rnd/jandi/src/dataset/best.pt

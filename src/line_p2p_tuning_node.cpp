@@ -89,9 +89,9 @@ public:
   LineP2pTuningNode() : rclcpp::Node("line_p2p_tuning_node") {
     auto config = vision_core::LoadDefaultAlgorithmConfig();
 
-    declare_parameter<std::string>("image_topic", "/camera/color/image_raw");
+    declare_parameter<std::string>("image_topic", "/camera/camera/color/image_raw");
     declare_parameter<std::string>("camera_info_topic",
-                                   "/camera/color/camera_info");
+                                   "/camera/camera/color/camera_info");
     declare_parameter<std::string>("imu_topic", "/camera/imu_tilt");
     declare_parameter<std::string>("action_cmd_topic",
                                    "/jandi_vision/action_cmd");

@@ -128,9 +128,9 @@ public:
   LinePerceptionNode() : rclcpp::Node("line_perception_node") {
     const vision_core::MissionControllerConfig algorithm_defaults =
         LoadSharedAlgorithmDefaults();
-    declare_parameter<std::string>("image_topic", "/camera/color/image_raw"); // 입력 이미지 토픽
-    declare_parameter<std::string>("depth_topic", "/camera/aligned_depth_to_color/image_raw");
-    declare_parameter<std::string>("camera_info_topic", "/camera/color/camera_info");
+    declare_parameter<std::string>("image_topic", "/camera/camera/color/image_raw"); // 입력 이미지 토픽
+    declare_parameter<std::string>("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw");
+    declare_parameter<std::string>("camera_info_topic", "/camera/camera/color/camera_info");
     declare_parameter<std::string>("imu_topic", "/camera/imu_tilt");          // IMU roll/pitch 토픽
     declare_parameter<std::string>("action_cmd_topic", "/jandi_vision/action_cmd");
     declare_parameter<std::string>("action_status_topic", "/jandi_vision/action_status");
