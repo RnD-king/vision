@@ -3,9 +3,9 @@
 # line_perception_node가 자동으로 읽으므로 이 파일에 중복하지 않는다.
 line_perception_node:
   ros__parameters:
-    image_topic: "/camera/color/image_raw"
-    depth_topic: "/camera/aligned_depth_to_color/image_raw"
-    camera_info_topic: "/camera/color/camera_info"
+    image_topic: "/camera/camera/color/image_raw"
+    depth_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
     imu_topic: "/camera/imu_tilt"
     action_cmd_topic: "/jandi_vision/action_cmd"
     action_status_topic: "/jandi_vision/action_status"
@@ -47,8 +47,8 @@ line_perception_node:
 # vision_algorithm.yaml에서 직접 읽는다.
 line_p2p_tuning_node:
   ros__parameters:
-    image_topic: "/camera/color/image_raw"
-    camera_info_topic: "/camera/color/camera_info"
+    image_topic: "/camera/camera/color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
     imu_topic: "/camera/imu_tilt"
     action_cmd_topic: "/jandi_vision/action_cmd"
     action_status_topic: "/jandi_vision/action_status"
