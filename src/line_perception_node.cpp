@@ -1165,6 +1165,20 @@ private:
     const auto t7 = std::chrono::steady_clock::now();
     const auto &mission_result = perception_result.mission;
     const auto &control_command = mission_result.command;
+    if (mission_result.line_window_stats) {
+      const auto &stats = *mission_result.line_window_stats;
+      RCLCPP_INFO(
+          get_logger(),
+          "[LINE OBS] id=%llu frames_total=%zu valid_line=%zu "
+          "window_frames=%zu used_valid=%zu est_motion=%.3fs "
+          "window=[%.3f,%.3f] remaining=%.3fs next_action=%u",
+          static_cast<unsigned long long>(stats.action_id),
+          stats.total_frames, stats.valid_frames,
+          stats.window_frames, stats.used_frames,
+          stats.estimated_motion_sec, stats.window_start_sec,
+          stats.window_end_sec, stats.remaining_sec,
+          static_cast<unsigned int>(control_command.action));
+    }
     const auto &ball_cmd = mission_result.ball;
     const auto &hurdle_cmd = mission_result.hurdle;
     const auto &goal_cmd = mission_result.goal;
