@@ -814,12 +814,22 @@ private:
       return;
     }
     if (!enable_command_transport_) return;
-    if (pending_camera_id_ == 0 || pending_camera_request_ != request) {
+    // Camera commands are serialized: a new request must not overwrite an
+    // in-flight command's ID, even if the desired camera mode changes.
+    // Keep retransmitting the original request until ACK, then wait for DONE.
+    if (pending_camera_id_ == 0) {
       pending_camera_id_ = next_camera_id_++;
       pending_camera_request_ = request;
       camera_acknowledged_ = false;
       camera_feedback_.settled = false;
       camera_feedback_.actual_mode = vision_core::CameraMode::kTransition;
+    } else if (pending_camera_request_ != request) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Camera request %u deferred until pending command id=%llu request=%u completes",
+          static_cast<unsigned int>(request),
+          static_cast<unsigned long long>(pending_camera_id_),
+          static_cast<unsigned int>(pending_camera_request_));
     }
     if (camera_acknowledged_) return;
     vision::msg::CameraCommand message;
