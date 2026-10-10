@@ -29,8 +29,13 @@ action의 ACK는 executor가 그 ID와 payload를 내부 one-action queue에 실
 회전한 뒤 다시 2초 관측하며 최대 5회 반복한다. 방향 기억이 없으면 회전 없이
 2초 관측을 최대 5회 추가한다. 한도를 넘으면 Reset 전까지 FINAL HOLD다.
 
-긴 LINE action 동안 후반 50% 표본을 끝으로 갈수록 1→3 가중 집계하며,
-READY 예약 action도 최초 action과 같은 direct selector로 결정한다.
+긴 LINE action은 최초 ACK 이후부터 관측을 기록한다. READY 수신 시 남은
+0.25초를 반영해 전체 모션시간을 추정하고, **40% 지점부터 READY까지**의
+유효한 O/H 표본을 끝으로 갈수록 1→3 가중 집계한다. DONE으로 종료되는
+경우에는 remaining=0으로 마무리한다. READY 예약 action도 최초 action과 같은
+direct selector로 결정한다. 현재 최소 표본 수 제한은 두지 않았으며,
+`[LINE OBS]` 로그의 `window_frames`, `used_valid`, `est_motion`, `remaining`을
+실기 테스트에서 관찰해 결정한다.
 
 ## 객체 미션
 
@@ -40,10 +45,20 @@ READY 예약 action도 최초 action과 같은 direct selector로 결정한다.
   trigger, 현재 action DONE 후 카메라 DOWN → action 10 → HUDDLE(16).
 - GOAL: 백보드 RGB-D로 림 중심 geometry를 매 fine step 뒤 다시 계산한다.
   거리 보정을 먼저 하고, shoot yaw가 ±30도 안이면 signed SHOOT, 아니면
-  좌우 side step 후 재관측한다.
+  좌우 side step 후 재관측한다. GOAL 카메라에서 백보드를 아직 보지 못했거나
+  마지막 관측이 중앙 부근(기본 ±0.12)이면 제자리 재탐색한다. 한번 본 백보드를
+  왼쪽/오른쪽에서 놓쳤다면 해당 방향으로 15도 회전하며 재탐색한다.
+  회전 후 기본 0.6초 정착, 3회 연속 재인식으로 정상 SEARCH에 복귀하며
+  방향 복구는 기본 5초 한도 내에서만 시도한다.
 
 카메라 trigger는 실행 중 보행을 취소하지 않는다. trigger만 latch하고 보행
 DONE 뒤 camera command를 발행하며, camera settled 전에는 새 보행을 만들지 않는다.
+카메라가 FORWARD/DOWN/GOAL 사이를 움직이는 동안 객체 association 추적과
+BALL/HURDLE/GOAL 관측·안정성 이력 갱신을 중지한다. 전환 후 이전 카메라 시야의
+identity와 tracker 이력을 초기화해 새로 수신한 settled 이미지로 판단한다.
+
+ACK/Camera DONE 누락, Action 오류, FSM FAILED는 의도적으로 자동 복구하지 않는
+정지 정책이다. A→B queue 승격 시에는 기존처럼 엔코더 SyncRead를 유지한다.
 
 공통 수치 기본값은 `vision_core/config/vision_algorithm.yaml` 하나만 사용한다.
 ROS 어댑터 설정은 `config/vision_params.yaml`에 둔다.
