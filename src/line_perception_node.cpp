@@ -712,6 +712,9 @@ private:
       feedback.acknowledged = true;
       feedback.ready = true;
     } else if (msg->status == vision::msg::CommandStatus::DONE) {
+      // Stamp the event in the same ROS clock domain as incoming images.
+      // Queued frames captured BEFORE DONE must never count as new evidence.
+      last_action_done_event_sec_ = this->get_clock()->now().seconds();
       feedback.acknowledged = true;
       feedback.done = true;
     } else {
@@ -728,6 +731,7 @@ private:
       return;
     }
     if (msg->status != vision::msg::CommandStatus::DONE) return;
+    last_camera_done_event_sec_ = this->get_clock()->now().seconds();
     switch (pending_camera_request_) {
     case vision_core::CameraRequest::kDown:
       camera_feedback_ = {vision_core::CameraMode::kDown, true};
@@ -1042,6 +1046,19 @@ private:
 
   void ProcessImage(const sensor_msgs::msg::Image::SharedPtr &msg) {
     const auto t0 = std::chrono::steady_clock::now();
+    // Transport may deliver frames taken during a P2P/camera movement only
+    // after DONE is received. Those frames are not post-DONE observations.
+    const double completion_sec =
+        std::max(last_action_done_event_sec_, last_camera_done_event_sec_);
+    if (completion_sec > 0.0) {
+      const double capture_sec = StampSeconds(msg->header);
+      if (!std::isfinite(capture_sec) || capture_sec <= 0.0 ||
+          capture_sec <= completion_sec) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+            "[OBS] Dropping image predating a motion/camera DONE or lacking a valid ROS timestamp");
+        return;
+      }
+    }
 
     RCLCPP_DEBUG(get_logger(), "[STEP %zu] Process image", frames_count_);
 
@@ -1165,6 +1182,15 @@ private:
     const auto t7 = std::chrono::steady_clock::now();
     const auto &mission_result = perception_result.mission;
     const auto &control_command = mission_result.command;
+    if (mission_result.post_motion_observing) {
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+          "[OBS] HOLD after DONE: mission=%u elapsed=%.2fs frames=%zu valid=%d/%zu (object window requires 7/10)",
+          static_cast<unsigned>(mission_result.active_mission),
+          mission_result.post_motion_elapsed_sec,
+          mission_result.post_motion_frames,
+          mission_result.post_motion_valid,
+          mission_result.post_motion_window_frames);
+    }
     if (mission_result.line_window_stats) {
       const auto &stats = *mission_result.line_window_stats;
       RCLCPP_INFO(
@@ -1503,6 +1529,11 @@ private:
   std::deque<vision_core::CommandDeliveryFeedback>
       simulated_action_feedback_queue_;
   vision_core::CameraFeedback camera_feedback_{};
+  // ROS-clock timestamps of the latest completion events. Image header
+  // stamps are compared before YOLO/FSM processing, so stale frames cannot
+  // satisfy the post-DONE 10/7 evidence gate.
+  double last_action_done_event_sec_{0.0};
+  double last_camera_done_event_sec_{0.0};
   std::uint64_t next_camera_id_{1};
   std::uint64_t pending_camera_id_{0};
   vision_core::CameraRequest pending_camera_request_{

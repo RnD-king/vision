@@ -62,3 +62,22 @@ ACK/Camera DONE 누락, Action 오류, FSM FAILED는 의도적으로 자동 복�
 
 공통 수치 기본값은 `vision_core/config/vision_algorithm.yaml` 하나만 사용한다.
 ROS 어댑터 설정은 `config/vision_params.yaml`에 둔다.
+
+
+## DONE 이후 새 관측 (2026-10)
+
+- 긴 LINE Action 11/12/13은 변경 없이 READY 사전 관측·one-slot 예약을 사용한다.
+- 일반 단일 P2P Action의 DONE 또는 DOWN/GOAL 카메라 DONE 이후에는
+  새로운 이미지로 최소 1초 관측한다. 기존 object tracker 히스토리는
+  새 관측 구간에서 초기화하며, BALL/HURDLE/GOAL은 이 구간의 최근
+  10프레임 중 7회 이상의 검출이 있을 때 다음 객체 기반 Action을 허용한다.
+  조건이 만족되지 않으면 HOLD한다.
+- LINE 복구 회전 이후에는 1초 동안 새 유효 O/H를 동일 가중 집계하고,
+  일반 LINE 인식 실패 후의 2초 정지 관측은 그대로 유지한다.
+- HURDLE 최초 안정 검출은 10/7이며, DOWN 카메라 이후의 고정
+  `STEP_FORWARD_ONE → HUDDLE` 연속 시퀀스에는 10/7 재확인을 요구하지 않는다.
+  PICK_BALL → RECATCH, SHOOT → FORWARD 등 고정 시퀀스도 대기 예외다.
+- 노드는 실제 ROS Camera/Action DONE 수신 시각을 기록하고,
+  이를 기준으로 촬영 시각(header.stamp)이 더 오래된 RGB 프레임을
+  추론/FSM에 전달하지 않는다. 카메라와 ROS 시간의 시계 일치가 전제다.
+- 장애 시 자동 복구·타임아웃 정지 정책과 `forward_walk`는 변경하지 않았다.
